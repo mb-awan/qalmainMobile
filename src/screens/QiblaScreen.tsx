@@ -66,15 +66,6 @@ const QiblaScreen = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>🧭 Qibla Direction</Text>
-        {location && (
-          <Text style={styles.headerSubtitle}>
-            {qiblaDirection.toFixed(1)}° from North
-          </Text>
-        )}
-      </View>
-
       <View style={styles.compassContainer}>
         <View style={styles.compass}>
           {/* Compass background */}
@@ -112,10 +103,13 @@ const QiblaScreen = () => {
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Current Direction</Text>
           <Text style={styles.infoValue}>
-            {location
-              ? `${qiblaDirection.toFixed(1)}°`
-              : 'Getting location...'}
+            {location ? `${qiblaDirection.toFixed(1)}°` : 'Getting location...'}
           </Text>
+          {location && (
+            <Text style={styles.infoSubtitle}>
+              {qiblaDirection.toFixed(1)}° from North
+            </Text>
+          )}
         </View>
       </View>
     </View>
@@ -125,24 +119,7 @@ const QiblaScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    backgroundColor: theme.colors.primary,
-    padding: theme.spacing.xl,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontFamily: theme.fonts.heading,
-    color: theme.colors.white,
-    marginBottom: theme.spacing.xs,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.white,
-    opacity: 0.9,
+    backgroundColor: theme.colors.white,
   },
   compassContainer: {
     flex: 1,
@@ -159,12 +136,17 @@ const styles = StyleSheet.create({
     width: COMPASS_SIZE,
     height: COMPASS_SIZE,
     borderRadius: COMPASS_SIZE / 2,
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.white,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   qiblaArrow: {
     position: 'absolute',
@@ -176,28 +158,28 @@ const styles = StyleSheet.create({
   arrowHead: {
     width: 0,
     height: 0,
-    borderLeftWidth: 15,
-    borderRightWidth: 15,
-    borderBottomWidth: 40,
+    borderLeftWidth: 18,
+    borderRightWidth: 18,
+    borderBottomWidth: 50,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: theme.colors.secondary,
-    marginBottom: COMPASS_SIZE / 2 - 40,
+    borderBottomColor: theme.colors.primary,
+    marginBottom: COMPASS_SIZE / 2 - 50,
   },
   arrowLine: {
-    width: 4,
-    height: COMPASS_SIZE / 2 - 20,
-    backgroundColor: theme.colors.secondary,
+    width: 5,
+    height: COMPASS_SIZE / 2 - 25,
+    backgroundColor: theme.colors.primary,
     position: 'absolute',
     top: COMPASS_SIZE / 2,
   },
   compassMarker: {
     position: 'absolute',
-    top: -20,
-    left: COMPASS_SIZE / 2 - 10,
+    top: -25,
+    left: COMPASS_SIZE / 2 - 12,
   },
   markerText: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: theme.fonts.heading,
     color: theme.colors.primary,
     fontWeight: 'bold',
@@ -207,7 +189,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xl,
     borderRadius: theme.borderRadius.lg,
     alignItems: 'center',
-    minWidth: 200,
+    minWidth: 250,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -215,18 +197,24 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   infoTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: theme.fonts.body,
     color: theme.colors.textSecondary,
     marginBottom: theme.spacing.sm,
+    fontWeight: '600',
   },
   infoValue: {
-    fontSize: 32,
+    fontSize: 36,
     fontFamily: theme.fonts.heading,
     color: theme.colors.primary,
+    fontWeight: 'bold',
+  },
+  infoSubtitle: {
+    fontSize: 14,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
   },
 });
 
 export default QiblaScreen;
-
-

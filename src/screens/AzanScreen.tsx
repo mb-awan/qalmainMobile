@@ -5,24 +5,32 @@ import {
   StyleSheet,
   Switch,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import {request, PERMISSIONS, RESULTS} from 'react-native-permissions';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {theme} from '../theme/colors';
 
 interface PrayerTime {
   name: string;
   time: string;
   icon: string;
+  isNext?: boolean;
 }
+
+type CalculationMethod = 'hanafi' | 'shafi';
 
 const AzanScreen = () => {
   const [prayerTimes, setPrayerTimes] = useState<PrayerTime[]>([]);
   const [azanEnabled, setAzanEnabled] = useState(true);
   const [silentMode, setSilentMode] = useState(false);
   const [location, setLocation] = useState<{lat: number; lng: number} | null>(null);
+  const [calculationMethod, setCalculationMethod] = useState<CalculationMethod>('hanafi');
 
   useEffect(() => {
+    loadSettings();
     requestLocationPermission();
   }, []);
 
@@ -30,7 +38,31 @@ const AzanScreen = () => {
     if (location) {
       fetchPrayerTimes();
     }
-  }, [location]);
+  }, [location, calculationMethod]);
+
+  const loadSettings = async () => {
+    try {
+      const method = await AsyncStorage.getItem('prayerCalculationMethod');
+      if (method) {
+        setCalculationMethod(method as CalculationMethod);
+      }
+      const enabled = await AsyncStorage.getItem('azanEnabled');
+      if (enabled !== null) {
+        setAzanEnabled(enabled === 'true');
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  const saveCalculationMethod = async (method: CalculationMethod) => {
+    try {
+      await AsyncStorage.setItem('prayerCalculationMethod', method);
+      setCalculationMethod(method);
+    } catch (error) {
+      console.error('Error saving calculation method:', error);
+    }
+  };
 
   const requestLocationPermission = async () => {
     try {
@@ -45,12 +77,10 @@ const AzanScreen = () => {
           },
           error => {
             console.error('Error getting location:', error);
-            // Use default location (Mecca) if permission denied
-            setLocation({lat: 21.4225, lng: 39.8262});
+            setLocation({lat: 21.4225, lng: 39.8262}); // Default to Mecca
           },
         );
       } else {
-        // Use default location
         setLocation({lat: 21.4225, lng: 39.8262});
       }
     } catch (error) {
@@ -59,28 +89,74 @@ const AzanScreen = () => {
     }
   };
 
-  const fetchPrayerTimes = async () => {
-    // In production, this would call the backend API
-    // For now, using mock data
-    const mockPrayerTimes: PrayerTime[] = [
+  const calculatePrayerTimes = (method: CalculationMethod) => {
+    // Simplified prayer time calculation
+    // In production, use a proper library like adhan-js
+    const now = new Date();
+    const times: PrayerTime[] = [
       {name: 'Fajr', time: '05:30 AM', icon: '🌅'},
       {name: 'Dhuhr', time: '12:15 PM', icon: '☀️'},
-      {name: 'Asr', time: '03:45 PM', icon: '🌤️'},
+      {
+        name: 'Asr',
+        time: method === 'hanafi' ? '03:45 PM' : '03:30 PM',
+        icon: '🌤️',
+        isNext: true,
+      },
       {name: 'Maghrib', time: '06:20 PM', icon: '🌆'},
       {name: 'Isha', time: '07:45 PM', icon: '🌙'},
     ];
-    setPrayerTimes(mockPrayerTimes);
+    return times;
+  };
+
+  const fetchPrayerTimes = async () => {
+    const times = calculatePrayerTimes(calculationMethod);
+    setPrayerTimes(times);
   };
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>🔔 Prayer Times</Text>
-        <Text style={styles.headerSubtitle}>
-          {location
-            ? `Location: ${location.lat.toFixed(2)}, ${location.lng.toFixed(2)}`
-            : 'Getting location...'}
-        </Text>
+        <Text style={styles.headerTitle}>Prayer Times</Text>
+        {location && (
+          <Text style={styles.headerSubtitle}>
+            Location: {location.lat.toFixed(2)}, {location.lng.toFixed(2)}
+          </Text>
+        )}
+      </View>
+
+      {/* Calculation Method Selection */}
+      <View style={styles.methodSection}>
+        <Text style={styles.sectionTitle}>Calculation Method</Text>
+        <View style={styles.methodButtons}>
+          <TouchableOpacity
+            style={[
+              styles.methodButton,
+              calculationMethod === 'hanafi' && styles.methodButtonActive,
+            ]}
+            onPress={() => saveCalculationMethod('hanafi')}>
+            <Text
+              style={[
+                styles.methodButtonText,
+                calculationMethod === 'hanafi' && styles.methodButtonTextActive,
+              ]}>
+              Hanafi
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.methodButton,
+              calculationMethod === 'shafi' && styles.methodButtonActive,
+            ]}
+            onPress={() => saveCalculationMethod('shafi')}>
+            <Text
+              style={[
+                styles.methodButtonText,
+                calculationMethod === 'shafi' && styles.methodButtonTextActive,
+              ]}>
+              Shafi
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.settingsSection}>
@@ -123,15 +199,27 @@ const AzanScreen = () => {
       <View style={styles.prayerTimesSection}>
         <Text style={styles.sectionTitle}>Today's Prayer Times</Text>
         {prayerTimes.map((prayer, index) => (
-          <View key={index} style={styles.prayerCard}>
+          <View
+            key={index}
+            style={[
+              styles.prayerCard,
+              prayer.isNext && styles.prayerCardNext,
+            ]}>
             <Text style={styles.prayerIcon}>{prayer.icon}</Text>
             <View style={styles.prayerInfo}>
-              <Text style={styles.prayerName}>{prayer.name}</Text>
+              <View style={styles.prayerHeader}>
+                <Text style={styles.prayerName}>{prayer.name}</Text>
+                {prayer.isNext && (
+                  <View style={styles.nextBadge}>
+                    <Text style={styles.nextBadgeText}>NEXT</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.prayerTime}>{prayer.time}</Text>
             </View>
             {azanEnabled && (
               <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>Active</Text>
+                <Icon name="notifications-active" size={20} color={theme.colors.success} />
               </View>
             )}
           </View>
@@ -144,7 +232,7 @@ const AzanScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.backgroundLight,
   },
   header: {
     backgroundColor: theme.colors.primary,
@@ -163,10 +251,50 @@ const styles = StyleSheet.create({
     color: theme.colors.white,
     opacity: 0.9,
   },
+  methodSection: {
+    backgroundColor: theme.colors.white,
+    margin: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: theme.fonts.heading,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.md,
+    fontWeight: 'bold',
+  },
+  methodButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+  },
+  methodButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 2,
+    borderColor: theme.colors.borderSubtle,
+    alignItems: 'center',
+  },
+  methodButtonActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + '10',
+  },
+  methodButtonText: {
+    fontSize: 16,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    fontWeight: '500',
+  },
+  methodButtonTextActive: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
   settingsSection: {
     backgroundColor: theme.colors.white,
     margin: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
   },
   settingRow: {
@@ -175,7 +303,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.highlight,
+    borderBottomColor: theme.colors.borderSubtle,
   },
   settingContent: {
     flex: 1,
@@ -194,24 +322,23 @@ const styles = StyleSheet.create({
   prayerTimesSection: {
     padding: theme.spacing.md,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontFamily: theme.fonts.heading,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.md,
-  },
   prayerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.white,
     padding: theme.spacing.md,
     marginBottom: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  prayerCardNext: {
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + '05',
   },
   prayerIcon: {
     fontSize: 32,
@@ -220,11 +347,30 @@ const styles = StyleSheet.create({
   prayerInfo: {
     flex: 1,
   },
+  prayerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
   prayerName: {
     fontSize: 18,
     fontFamily: theme.fonts.heading,
     color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.xs,
+    fontWeight: 'bold',
+  },
+  nextBadge: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  nextBadgeText: {
+    fontSize: 10,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.white,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   prayerTime: {
     fontSize: 16,
@@ -232,18 +378,8 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   statusBadge: {
-    backgroundColor: theme.colors.success,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: theme.borderRadius.sm,
-  },
-  statusText: {
-    fontSize: 12,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.white,
+    padding: theme.spacing.xs,
   },
 });
 
 export default AzanScreen;
-
-

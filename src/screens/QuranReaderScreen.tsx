@@ -5,50 +5,27 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Dimensions,
 } from 'react-native';
-import Orientation from 'react-native-orientation-locker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {theme} from '../theme/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const QuranReaderScreen = ({navigation}: any) => {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isLandscape, setIsLandscape] = useState(false);
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
+
+interface QuranReaderScreenProps {
+  navigation: any;
+  route?: any;
+}
+
+const QuranReaderScreen = ({navigation, route}: QuranReaderScreenProps) => {
+  const [currentAyah, setCurrentAyah] = useState(1);
   const [bookmarkedAyahs, setBookmarkedAyahs] = useState<number[]>([]);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
-    const orientationHandler = (orientation: string) => {
-      setIsLandscape(orientation === 'LANDSCAPE-LEFT' || orientation === 'LANDSCAPE-RIGHT');
-    };
-
-    Orientation.addOrientationListener(orientationHandler);
-
-    loadLastReadPosition();
     loadBookmarks();
-
-    return () => {
-      Orientation.removeOrientationListener(orientationHandler);
-    };
   }, []);
-
-  const loadLastReadPosition = async () => {
-    try {
-      const lastPage = await AsyncStorage.getItem('lastReadPage');
-      if (lastPage) {
-        setCurrentPage(parseInt(lastPage, 10));
-      }
-    } catch (error) {
-      console.error('Error loading last read position:', error);
-    }
-  };
-
-  const saveLastReadPosition = async (page: number) => {
-    try {
-      await AsyncStorage.setItem('lastReadPage', page.toString());
-    } catch (error) {
-      console.error('Error saving last read position:', error);
-    }
-  };
 
   const loadBookmarks = async () => {
     try {
@@ -76,94 +53,109 @@ const QuranReaderScreen = ({navigation}: any) => {
     }
   };
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= 604) {
-      // 604 pages in standard Quran
-      setCurrentPage(newPage);
-      saveLastReadPosition(newPage);
-    }
-  };
-
-  // Mock Quran data - In production, this would come from API or local database
-  const renderAyahs = () => {
-    const ayahs = [];
-    const ayahsPerPage = isLandscape ? 20 : 15;
-    
-    for (let i = 1; i <= ayahsPerPage; i++) {
-      const ayahNumber = (currentPage - 1) * ayahsPerPage + i;
-      const isBookmarked = bookmarkedAyahs.includes(ayahNumber);
-      
-      ayahs.push(
-        <View
-          key={ayahNumber}
-          style={[
-            styles.ayahContainer,
-            isBookmarked && styles.bookmarkedAyah,
-          ]}>
-          <Text style={styles.ayahNumber}>{ayahNumber}</Text>
-          <Text style={styles.ayahText}>
-            بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ
-          </Text>
-          <TouchableOpacity
-            style={styles.bookmarkIcon}
-            onPress={() => toggleBookmark(ayahNumber)}>
-            <Icon
-              name={isBookmarked ? 'bookmark' : 'bookmark-border'}
-              size={20}
-              color={isBookmarked ? theme.colors.secondary : theme.colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return ayahs;
-  };
+  // Mock Surah Al-Fatiha data
+  const ayahs = [
+    {
+      number: 1,
+      arabic: 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ',
+      translation: 'All praise is due to Allah, Lord of the worlds.',
+      isHighlighted: true,
+    },
+    {
+      number: 2,
+      arabic: 'الرَّحْمَٰنِ الرَّحِيمِ',
+      translation: '',
+      isHighlighted: false,
+    },
+    {
+      number: 3,
+      arabic: 'مَالِكِ يَوْمِ الدِّينِ',
+      translation: '',
+      isHighlighted: false,
+    },
+    {
+      number: 4,
+      arabic: 'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ',
+      translation: '',
+      isHighlighted: false,
+    },
+  ];
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerText}>
-          Para 1 | Al-Fatiha | Page {currentPage}
-        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerButton}>
+          <Icon name="arrow-back-ios-new" size={24} color={theme.colors.accentGold} />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerPara}>Para 1</Text>
+          <Text style={styles.headerTitle}>Surah Al-Fatiha</Text>
+        </View>
+        <TouchableOpacity style={styles.headerButton}>
+          <Icon name="settings" size={24} color={theme.colors.accentGold} />
+        </TouchableOpacity>
       </View>
 
+      {/* Content */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}>
-        {renderAyahs()}
+        {/* Bismillah */}
+        <Text style={styles.bismillah}>
+          بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+        </Text>
+
+        {/* Ayahs */}
+        {ayahs.map((ayah, index) => (
+          <View
+            key={ayah.number}
+            style={[
+              styles.ayahWrapper,
+              ayah.isHighlighted && styles.ayahHighlighted,
+            ]}>
+            <View style={styles.ayahContainer}>
+              <Text style={styles.ayahText}>{ayah.arabic}</Text>
+              <View style={styles.ayahNumberBadge}>
+                <Text style={styles.ayahNumberText}>
+                  {ayah.number.toLocaleString('ar-EG')}
+                </Text>
+              </View>
+            </View>
+            {ayah.translation && (
+              <Text style={styles.translation}>{ayah.translation}</Text>
+            )}
+          </View>
+        ))}
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1}>
-          <Icon
-            name="chevron-left"
-            size={24}
-            color={currentPage === 1 ? theme.colors.textSecondary : theme.colors.primary}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.pageInfo}>
-          <Text style={styles.pageText}>{currentPage} / 604</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage === 604}>
-          <Icon
-            name="chevron-right"
-            size={24}
-            color={currentPage === 604 ? theme.colors.textSecondary : theme.colors.primary}
-          />
+      {/* Bottom Controls */}
+      <View style={styles.bottomControls}>
+        <TouchableOpacity style={styles.controlButton}>
+          <Icon name="edit-note" size={28} color={theme.colors.accentGold} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.aiButton}
+          style={styles.micButton}
           onPress={() => navigation.navigate('AIQari')}>
-          <Icon name="mic" size={24} color={theme.colors.white} />
+          <View style={styles.micButtonInner}>
+            <Icon name="mic" size={32} color={theme.colors.white} />
+          </View>
+          <View style={styles.aiBadge}>
+            <Text style={styles.aiBadgeText}>AI</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.controlButton}
+          onPress={() => setIsPaused(!isPaused)}>
+          <Icon
+            name={isPaused ? 'play-circle' : 'pause-circle'}
+            size={32}
+            color={theme.colors.primary}
+          />
         </TouchableOpacity>
       </View>
     </View>
@@ -173,82 +165,168 @@ const QuranReaderScreen = ({navigation}: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.backgroundLight,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: theme.colors.primary,
     padding: theme.spacing.md,
+    paddingTop: theme.spacing.lg,
+    borderBottomWidth: 4,
+    borderBottomColor: '#145344',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  headerText: {
-    fontSize: 18,
+  headerCenter: {
+    alignItems: 'center',
+  },
+  headerPara: {
+    fontSize: 10,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.accentGold + 'CC',
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    marginBottom: 2,
+  },
+  headerTitle: {
+    fontSize: 20,
     fontFamily: theme.fonts.heading,
-    color: theme.colors.white,
+    color: theme.colors.accentGold,
+    fontWeight: 'bold',
   },
   scrollView: {
     flex: 1,
   },
   contentContainer: {
+    padding: theme.spacing.xl,
+    paddingBottom: 100,
+  },
+  bismillah: {
+    fontSize: 36,
+    fontFamily: theme.fonts.quran,
+    color: theme.colors.primary + 'E6',
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+    lineHeight: 64,
+  },
+  ayahWrapper: {
+    marginBottom: theme.spacing.lg,
+  },
+  ayahHighlighted: {
+    backgroundColor: theme.colors.accentGold + '26',
+    borderRadius: 12,
     padding: theme.spacing.md,
+    marginVertical: theme.spacing.sm,
   },
   ayahContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
-    padding: theme.spacing.md,
-    backgroundColor: theme.colors.white,
-    borderRadius: theme.borderRadius.md,
-  },
-  bookmarkedAyah: {
-    backgroundColor: theme.colors.highlight,
-  },
-  ayahNumber: {
-    fontSize: 16,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.secondary,
-    marginRight: theme.spacing.sm,
-    minWidth: 30,
+    justifyContent: 'flex-end',
+    marginBottom: theme.spacing.sm,
   },
   ayahText: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 40,
     fontFamily: theme.fonts.quran,
-    color: theme.colors.textPrimary,
+    color: '#101917',
     textAlign: 'right',
-    lineHeight: 40,
+    lineHeight: 72,
   },
-  bookmarkIcon: {
-    marginLeft: theme.spacing.sm,
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: theme.spacing.md,
+  ayahNumberBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: theme.colors.accentGold + '66',
     backgroundColor: theme.colors.white,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.highlight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: theme.spacing.sm,
   },
-  navButton: {
-    padding: theme.spacing.sm,
+  ayahNumberText: {
+    fontSize: 18,
+    fontFamily: theme.fonts.quran,
+    color: theme.colors.accentGold,
+    fontWeight: 'bold',
   },
-  pageInfo: {
-    flex: 1,
+  translation: {
+    fontSize: 14,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.primary + '99',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: theme.spacing.sm,
+  },
+  bottomControls: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.xl,
+  },
+  controlButton: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  pageText: {
-    fontSize: 16,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textPrimary,
+  micButton: {
+    width: 64,
+    height: 64,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  aiButton: {
-    backgroundColor: theme.colors.warning,
-    padding: theme.spacing.sm,
-    borderRadius: theme.borderRadius.round,
-    marginLeft: theme.spacing.sm,
+  micButtonInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: theme.colors.white,
+    shadowColor: theme.colors.primary,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  aiBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: theme.colors.accentGold,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.white,
+  },
+  aiBadgeText: {
+    fontSize: 8,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.primary,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });
 
 export default QuranReaderScreen;
-
-

@@ -1,16 +1,26 @@
 export const theme = {
   colors: {
-    primary: '#1F7A63', // Deep Green
-    secondary: '#D4AF37', // Soft Gold
-    background: '#FAFAF7', // Off-White
-    textPrimary: '#2E2E2E', // Dark Charcoal
-    textSecondary: '#757575',
+    primary: '#1F7A63', // Deep Green from Stitch
+    secondary: '#D4AF37', // Gold accent
+    accentGold: '#D4AF37', // Gold for badges/accents
+    accentOrange: '#F5A623', // Orange for AI Qari
+    background: '#FFFFFF', // White background
+    backgroundLight: '#FAFAF7', // Off-white from Stitch
+    backgroundDark: '#131F1C', // Dark mode background
+    textPrimary: '#101917', // Main text color from Stitch
+    textSecondary: '#67837C', // Muted text from Stitch
+    textMuted: '#75756E', // Additional muted text
     highlight: '#E6F4EF', // Light Green Tint
-    warning: '#F5A623', // Soft Orange
+    warning: '#F5A623', // Orange
     white: '#FFFFFF',
     black: '#000000',
-    error: '#D32F2F',
+    error: '#FF3B30', // iOS red
     success: '#388E3C',
+    gold: '#D4AF37', // Gold for ratings
+    lightTeal: '#B2DFDB', // Light teal for circles
+    borderSubtle: '#E5E5E0', // Subtle borders
+    iosGrey: '#F2F2F7', // iOS grey
+    iosDivider: '#E5E5EA', // iOS divider
   },
   fonts: {
     quran: 'Amiri', // or 'Scheherazade'
