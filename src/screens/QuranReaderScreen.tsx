@@ -1,322 +1,633 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
-  Dimensions,
+  ActivityIndicator,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import {theme} from '../theme/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const {width: SCREEN_WIDTH} = Dimensions.get('window');
+import { theme } from '../theme/colors';
+import {
+  fetchSurah,
+  fetchJuz,
+  SurahContent,
+} from '../services/quranApi';
 
 interface QuranReaderScreenProps {
   navigation: any;
   route?: any;
 }
 
-const QuranReaderScreen = ({navigation, route}: QuranReaderScreenProps) => {
-  const [currentAyah, setCurrentAyah] = useState(1);
-  const [bookmarkedAyahs, setBookmarkedAyahs] = useState<number[]>([]);
-  const [isPaused, setIsPaused] = useState(false);
+interface DisplayAyah {
+  key: string;
+  arabicText: string;
+  englishText: string;
+  numberInSurah: number;
+  globalNumber: number;
+  surahNumber?: number;
+  surahName?: string;
+  surahEnglishName?: string;
+  isSurahHeader?: boolean;
+  surahForHeader?: {
+    number: number;
+    name: string;
+    englishName: string;
+    englishNameTranslation: string;
+    revelationType: string;
+    numberOfAyahs: number;
+  };
+}
+
+const BOOKMARKS_KEY = 'bookmarkedAyahs';
+
+const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
+  const surahNumber: number | undefined = route?.params?.surahNumber;
+  const juzNumber: number | undefined = route?.params?.juzNumber;
+  const screenTitle: string = route?.params?.title ?? 'Quran';
+
+  const [ayahs, setAyahs] = useState<DisplayAyah[]>([]);
+  const [surahMeta, setSurahMeta] = useState<Partial<SurahContent> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showTranslation, setShowTranslation] = useState(true);
+  const [bookmarkedAyahs, setBookmarkedAyahs] = useState<Set<number>>(new Set());
+  const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const listRef = useRef<FlatList>(null);
+
+  const FONT_SIZES = { sm: 32, md: 40, lg: 50 };
 
   useEffect(() => {
     loadBookmarks();
-  }, []);
+    loadContent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surahNumber, juzNumber]);
 
   const loadBookmarks = async () => {
     try {
-      const bookmarks = await AsyncStorage.getItem('bookmarkedAyahs');
-      if (bookmarks) {
-        setBookmarkedAyahs(JSON.parse(bookmarks));
+      const stored = await AsyncStorage.getItem(BOOKMARKS_KEY);
+      if (stored) {
+        setBookmarkedAyahs(new Set(JSON.parse(stored)));
       }
-    } catch (error) {
-      console.error('Error loading bookmarks:', error);
-    }
+    } catch {}
   };
 
-  const toggleBookmark = async (ayahNumber: number) => {
+  const toggleBookmark = useCallback(
+    async (globalNumber: number) => {
+      setBookmarkedAyahs(prev => {
+        const next = new Set(prev);
+        if (next.has(globalNumber)) {
+          next.delete(globalNumber);
+        } else {
+          next.add(globalNumber);
+        }
+        AsyncStorage.setItem(
+          BOOKMARKS_KEY,
+          JSON.stringify(Array.from(next)),
+        ).catch(() => {});
+        return next;
+      });
+    },
+    [],
+  );
+
+  const loadContent = async () => {
     try {
-      let updated = [...bookmarkedAyahs];
-      if (updated.includes(ayahNumber)) {
-        updated = updated.filter(id => id !== ayahNumber);
-      } else {
-        updated.push(ayahNumber);
+      setLoading(true);
+      setError(null);
+
+      if (surahNumber) {
+        const { arabic, english } = await fetchSurah(surahNumber);
+        setSurahMeta(arabic);
+        const items: DisplayAyah[] = arabic.ayahs.map((a, i) => ({
+          key: `ayah-${a.number}`,
+          arabicText: a.text,
+          englishText: english.ayahs[i]?.text ?? '',
+          numberInSurah: a.numberInSurah,
+          globalNumber: a.number,
+        }));
+        setAyahs(items);
+      } else if (juzNumber) {
+        const { arabic, english } = await fetchJuz(juzNumber);
+        const engMap = new Map<number, string>();
+        english.ayahs.forEach(a => engMap.set(a.number, a.text));
+
+        // Group by surah and insert surah-header rows
+        const result: DisplayAyah[] = [];
+        let lastSurahNum = -1;
+
+        arabic.ayahs.forEach(a => {
+          const currentSurah = a.surah?.number ?? 0;
+          if (currentSurah !== lastSurahNum) {
+            // Insert a surah header
+            result.push({
+              key: `header-${currentSurah}`,
+              arabicText: '',
+              englishText: '',
+              numberInSurah: 0,
+              globalNumber: 0,
+              isSurahHeader: true,
+              surahForHeader: a.surah as DisplayAyah['surahForHeader'],
+            });
+            lastSurahNum = currentSurah;
+          }
+          result.push({
+            key: `ayah-${a.number}`,
+            arabicText: a.text,
+            englishText: engMap.get(a.number) ?? '',
+            numberInSurah: a.numberInSurah,
+            globalNumber: a.number,
+            surahNumber: currentSurah,
+            surahName: a.surah?.name,
+            surahEnglishName: a.surah?.englishName,
+          });
+        });
+        setAyahs(result);
+        setSurahMeta(null);
       }
-      setBookmarkedAyahs(updated);
-      await AsyncStorage.setItem('bookmarkedAyahs', JSON.stringify(updated));
-    } catch (error) {
-      console.error('Error toggling bookmark:', error);
+    } catch {
+      setError('Failed to load Quran content.\nPlease check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Mock Surah Al-Fatiha data
-  const ayahs = [
-    {
-      number: 1,
-      arabic: 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ',
-      translation: 'All praise is due to Allah, Lord of the worlds.',
-      isHighlighted: true,
-    },
-    {
-      number: 2,
-      arabic: 'الرَّحْمَٰنِ الرَّحِيمِ',
-      translation: '',
-      isHighlighted: false,
-    },
-    {
-      number: 3,
-      arabic: 'مَالِكِ يَوْمِ الدِّينِ',
-      translation: '',
-      isHighlighted: false,
-    },
-    {
-      number: 4,
-      arabic: 'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ',
-      translation: '',
-      isHighlighted: false,
-    },
-  ];
+  const cycleFontSize = () => {
+    setFontSize(prev => (prev === 'sm' ? 'md' : prev === 'md' ? 'lg' : 'sm'));
+  };
+
+  const renderSurahHeader = (item: DisplayAyah) => {
+    const s = item.surahForHeader;
+    if (!s) return null;
+    const showBismillah = s.number !== 9 && s.number !== 1;
+    return (
+      <View style={styles.surahHeaderCard}>
+        <View style={styles.surahHeaderTop}>
+          <View style={styles.surahHeaderBadge}>
+            <Text style={styles.surahHeaderBadgeText}>{s.number}</Text>
+          </View>
+          <View style={styles.surahHeaderInfo}>
+            <Text style={styles.surahHeaderEnglish}>{s.englishName}</Text>
+            <Text style={styles.surahHeaderMeta}>
+              {s.englishNameTranslation} · {s.numberOfAyahs} Verses ·{' '}
+              {s.revelationType}
+            </Text>
+          </View>
+          <Text style={styles.surahHeaderArabic}>{s.name}</Text>
+        </View>
+        {showBismillah && (
+          <Text style={styles.bismillah}>
+            بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+          </Text>
+        )}
+      </View>
+    );
+  };
+
+  const renderAyah = ({ item }: { item: DisplayAyah }) => {
+    if (item.isSurahHeader) {
+      return renderSurahHeader(item);
+    }
+
+    const isBookmarked = bookmarkedAyahs.has(item.globalNumber);
+
+    return (
+      <View style={styles.ayahCard}>
+        {/* Arabic text + verse number */}
+        <View style={styles.ayahRow}>
+          <TouchableOpacity
+            style={[styles.verseNumBadge, isBookmarked && styles.verseNumBadgeBookmarked]}
+            onPress={() => toggleBookmark(item.globalNumber)}>
+            <Text
+              style={[
+                styles.verseNumText,
+                isBookmarked && styles.verseNumTextBookmarked,
+              ]}>
+              {item.numberInSurah}
+            </Text>
+          </TouchableOpacity>
+          <Text
+            style={[
+              styles.arabicText,
+              { fontSize: FONT_SIZES[fontSize] },
+            ]}>
+            {item.arabicText}
+          </Text>
+        </View>
+
+        {/* Translation */}
+        {showTranslation && item.englishText ? (
+          <Text style={styles.translationText}>{item.englishText}</Text>
+        ) : null}
+
+        {/* Divider */}
+        <View style={styles.ayahDivider} />
+      </View>
+    );
+  };
+
+  const renderHeader = () => {
+    if (!surahMeta || juzNumber) return null;
+    const showBismillah =
+      surahMeta.number !== 9;
+    return (
+      <View style={styles.surahBanner}>
+        <Text style={styles.surahBannerArabic}>{surahMeta.name}</Text>
+        <Text style={styles.surahBannerMeta}>
+          {surahMeta.englishNameTranslation} · {surahMeta.numberOfAyahs} Verses · {surahMeta.revelationType}
+        </Text>
+        {showBismillah && (
+          <Text style={styles.bismillahBanner}>
+            بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <SafeAreaView style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={theme.colors.primary}
+      />
+
+      {/* Top header bar */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.headerButton}>
-          <Icon name="arrow-back-ios-new" size={24} color={theme.colors.accentGold} />
+          style={styles.headerBtn}>
+          <Icon name="arrow-back-ios-new" size={22} color={theme.colors.accentGold} />
         </TouchableOpacity>
+
         <View style={styles.headerCenter}>
-          <Text style={styles.headerPara}>Para 1</Text>
-          <Text style={styles.headerTitle}>Surah Al-Fatiha</Text>
+          {juzNumber ? (
+            <Text style={styles.headerLabel}>
+              {screenTitle.startsWith('Para') ? 'PARA' : 'JUZ'}{' '}
+              {juzNumber}
+            </Text>
+          ) : (
+            <Text style={styles.headerLabel}>SURAH {surahNumber}</Text>
+          )}
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {screenTitle}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.headerButton}>
-          <Icon name="settings" size={24} color={theme.colors.accentGold} />
-        </TouchableOpacity>
+
+        <View style={styles.headerActions}>
+          {/* Font size cycle */}
+          <TouchableOpacity style={styles.headerBtn} onPress={cycleFontSize}>
+            <Icon name="format-size" size={22} color={theme.colors.accentGold} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Content */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}>
-        {/* Bismillah */}
-        <Text style={styles.bismillah}>
-          بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-        </Text>
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading Arabic text…</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Icon name="wifi-off" size={52} color={theme.colors.textSecondary} />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadContent}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={ayahs}
+          renderItem={renderAyah}
+          keyExtractor={item => item.key}
+          ListHeaderComponent={renderHeader}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={15}
+          windowSize={10}
+        />
+      )}
 
-        {/* Ayahs */}
-        {ayahs.map((ayah, index) => (
-          <View
-            key={ayah.number}
-            style={[
-              styles.ayahWrapper,
-              ayah.isHighlighted && styles.ayahHighlighted,
-            ]}>
-            <View style={styles.ayahContainer}>
-              <Text style={styles.ayahText}>{ayah.arabic}</Text>
-              <View style={styles.ayahNumberBadge}>
-                <Text style={styles.ayahNumberText}>
-                  {ayah.number.toLocaleString('ar-EG')}
-                </Text>
-              </View>
+      {/* Bottom toolbar */}
+      {!loading && !error && (
+        <View style={styles.toolbar}>
+          {/* Translation toggle */}
+          <TouchableOpacity
+            style={[styles.toolbarBtn, showTranslation && styles.toolbarBtnActive]}
+            onPress={() => setShowTranslation(v => !v)}>
+            <Icon
+              name="translate"
+              size={22}
+              color={showTranslation ? theme.colors.white : theme.colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.toolbarLabel,
+                showTranslation && styles.toolbarLabelActive,
+              ]}>
+              Translation
+            </Text>
+          </TouchableOpacity>
+
+          {/* AI Qari */}
+          <TouchableOpacity
+            style={styles.micButton}
+            onPress={() => navigation.navigate('AIQari')}>
+            <View style={styles.micButtonInner}>
+              <Icon name="mic" size={28} color={theme.colors.white} />
             </View>
-            {ayah.translation && (
-              <Text style={styles.translation}>{ayah.translation}</Text>
-            )}
-          </View>
-        ))}
-      </ScrollView>
+            <View style={styles.aiBadge}>
+              <Text style={styles.aiBadgeText}>AI</Text>
+            </View>
+          </TouchableOpacity>
 
-      {/* Bottom Controls */}
-      <View style={styles.bottomControls}>
-        <TouchableOpacity style={styles.controlButton}>
-          <Icon name="edit-note" size={28} color={theme.colors.accentGold} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.micButton}
-          onPress={() => navigation.navigate('AIQari')}>
-          <View style={styles.micButtonInner}>
-            <Icon name="mic" size={32} color={theme.colors.white} />
-          </View>
-          <View style={styles.aiBadge}>
-            <Text style={styles.aiBadgeText}>AI</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.controlButton}
-          onPress={() => setIsPaused(!isPaused)}>
-          <Icon
-            name={isPaused ? 'play-circle' : 'pause-circle'}
-            size={32}
-            color={theme.colors.primary}
-          />
-        </TouchableOpacity>
-      </View>
-    </View>
+          {/* Scroll to top */}
+          <TouchableOpacity
+            style={styles.toolbarBtn}
+            onPress={() =>
+              listRef.current?.scrollToOffset({ offset: 0, animated: true })
+            }>
+            <Icon name="vertical-align-top" size={22} color={theme.colors.textSecondary} />
+            <Text style={styles.toolbarLabel}>Top</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.backgroundLight,
+    backgroundColor: '#FFFEF7',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: theme.colors.primary,
-    padding: theme.spacing.md,
-    paddingTop: theme.spacing.lg,
-    borderBottomWidth: 4,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 3,
     borderBottomColor: '#145344',
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
-  headerButton: {
+  headerBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerCenter: {
+    flex: 1,
     alignItems: 'center',
+    paddingHorizontal: theme.spacing.sm,
   },
-  headerPara: {
+  headerLabel: {
     fontSize: 10,
     fontFamily: theme.fonts.button,
     color: theme.colors.accentGold + 'CC',
-    fontWeight: 'bold',
     letterSpacing: 2,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: theme.fonts.heading,
     color: theme.colors.accentGold,
-    fontWeight: 'bold',
   },
-  scrollView: {
-    flex: 1,
+  headerActions: {
+    flexDirection: 'row',
+    gap: 4,
   },
-  contentContainer: {
-    padding: theme.spacing.xl,
-    paddingBottom: 100,
+  surahBanner: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
   },
-  bismillah: {
-    fontSize: 36,
+  surahBannerArabic: {
+    fontSize: 30,
     fontFamily: theme.fonts.quran,
-    color: theme.colors.primary + 'E6',
+    color: theme.colors.accentGold,
+    marginBottom: 6,
+  },
+  surahBannerMeta: {
+    fontSize: 13,
+    fontFamily: theme.fonts.body,
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: theme.spacing.md,
+  },
+  bismillahBanner: {
+    fontSize: 28,
+    fontFamily: theme.fonts.quran,
+    color: theme.colors.white,
     textAlign: 'center',
-    marginBottom: theme.spacing.xl,
-    lineHeight: 64,
+    lineHeight: 52,
+    marginTop: theme.spacing.sm,
   },
-  ayahWrapper: {
-    marginBottom: theme.spacing.lg,
-  },
-  ayahHighlighted: {
-    backgroundColor: theme.colors.accentGold + '26',
-    borderRadius: 12,
+  surahHeaderCard: {
+    backgroundColor: theme.colors.highlight,
+    marginHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.md,
+    marginBottom: 4,
+    borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
-    marginVertical: theme.spacing.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
   },
-  ayahContainer: {
+  surahHeaderTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: theme.spacing.sm,
   },
-  ayahText: {
+  surahHeaderBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: theme.spacing.sm,
+  },
+  surahHeaderBadgeText: {
+    fontSize: 13,
+    fontFamily: theme.fonts.heading,
+    color: theme.colors.white,
+    fontWeight: '700',
+  },
+  surahHeaderInfo: {
     flex: 1,
-    fontSize: 40,
+  },
+  surahHeaderEnglish: {
+    fontSize: 15,
+    fontFamily: theme.fonts.heading,
+    color: theme.colors.textPrimary,
+  },
+  surahHeaderMeta: {
+    fontSize: 12,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+  },
+  surahHeaderArabic: {
+    fontSize: 20,
+    fontFamily: theme.fonts.quran,
+    color: theme.colors.primary,
+  },
+  bismillah: {
+    fontSize: 22,
+    fontFamily: theme.fonts.quran,
+    color: theme.colors.primary,
+    textAlign: 'center',
+    marginTop: theme.spacing.sm,
+    lineHeight: 42,
+  },
+  listContent: {
+    paddingBottom: 100,
+  },
+  ayahCard: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+  },
+  ayahRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+  },
+  verseNumBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accentGold + '80',
+    backgroundColor: theme.colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 6,
+    marginLeft: theme.spacing.sm,
+    flexShrink: 0,
+  },
+  verseNumBadgeBookmarked: {
+    backgroundColor: theme.colors.accentGold,
+    borderColor: theme.colors.accentGold,
+  },
+  verseNumText: {
+    fontSize: 12,
+    fontFamily: theme.fonts.heading,
+    color: theme.colors.accentGold,
+    fontWeight: '700',
+  },
+  verseNumTextBookmarked: {
+    color: theme.colors.white,
+  },
+  arabicText: {
+    flex: 1,
     fontFamily: theme.fonts.quran,
     color: '#101917',
     textAlign: 'right',
     lineHeight: 72,
+    writingDirection: 'rtl',
   },
-  ayahNumberBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: theme.colors.accentGold + '66',
-    backgroundColor: theme.colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: theme.spacing.sm,
-  },
-  ayahNumberText: {
-    fontSize: 18,
-    fontFamily: theme.fonts.quran,
-    color: theme.colors.accentGold,
-    fontWeight: 'bold',
-  },
-  translation: {
+  translationText: {
     fontSize: 14,
     fontFamily: theme.fonts.body,
-    color: theme.colors.primary + '99',
-    fontStyle: 'italic',
-    textAlign: 'center',
+    color: theme.colors.textSecondary,
+    lineHeight: 22,
     marginTop: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colors.primary + '40',
+    marginLeft: theme.spacing.sm,
   },
-  bottomControls: {
+  ayahDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderSubtle,
+    marginTop: theme.spacing.md,
+    marginHorizontal: theme.spacing.sm,
+  },
+  toolbar: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.xl,
-    gap: theme.spacing.xl,
+    backgroundColor: theme.colors.white,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderSubtle,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: 20,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
   },
-  controlButton: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
+  toolbarBtn: {
     alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+  },
+  toolbarBtnActive: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+  },
+  toolbarLabel: {
+    fontSize: 10,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+  },
+  toolbarLabelActive: {
+    color: theme.colors.white,
   },
   micButton: {
-    width: 64,
-    height: 64,
+    width: 56,
+    height: 56,
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
   micButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: theme.colors.white,
     shadowColor: theme.colors.primary,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
     elevation: 8,
   },
   aiBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: 0,
+    right: 0,
     backgroundColor: theme.colors.accentGold,
     borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     borderWidth: 1,
     borderColor: theme.colors.white,
   },
@@ -326,6 +637,38 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.xl,
+  },
+  loadingText: {
+    marginTop: theme.spacing.md,
+    fontSize: 14,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+  },
+  errorText: {
+    marginTop: theme.spacing.md,
+    fontSize: 14,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  retryBtn: {
+    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.lg,
+  },
+  retryText: {
+    fontSize: 14,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.white,
   },
 });
 
