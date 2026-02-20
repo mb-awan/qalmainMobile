@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-native-sound/sound.js b/node_modules/react-native-sound/sound.js
+index c9bcbaf..49d4c59 100644
+--- a/node_modules/react-native-sound/sound.js
++++ b/node_modules/react-native-sound/sound.js
+@@ -37,7 +37,7 @@ function setAndroidVolumes(sound) {
+ }
+ 
+ function Sound(filename, basePath, onError, options) {
+-  var asset = resolveAssetSource(filename);
++  var asset = typeof filename === 'number' ? resolveAssetSource(filename) : null;
+   if (asset) {
+     this._filename = asset.uri;
+     onError = basePath;
