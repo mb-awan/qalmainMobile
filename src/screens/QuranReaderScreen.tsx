@@ -72,17 +72,24 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioBuffering, setAudioBuffering] = useState(false);
 
-  // Refs
+  // Playback refs
   const listRef = useRef<FlatList>(null);
   const soundRef = useRef<Sound | null>(null);
   const ayahsRef = useRef<DisplayAyah[]>([]);
-  // playFnRef lets the play function call itself recursively without stale closures
+  // Allows recursive auto-advance without stale closures
   const playFnRef = useRef<((key: string) => void) | null>(null);
+
+  // Lookahead prefetch refs (one ayah buffered ahead)
+  const nextSoundRef = useRef<Sound | null>(null);
+  const nextKeyRef = useRef<string | null>(null);
+  const nextReadyRef = useRef<boolean>(false);
+  // Incremented whenever a prefetch is cancelled — callbacks compare against this
+  const prefetchIdRef = useRef<number>(0);
 
   // Keep ayahsRef fresh on every render
   ayahsRef.current = ayahs;
 
-  // ─── Load content ────────────────────────────────────────────────────────────
+  // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     loadBookmarks();
@@ -92,24 +99,204 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   // Stop audio when navigating away
   useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', () => {
-      releaseSound();
-    });
+    const unsub = navigation.addListener('beforeRemove', releaseAll);
     return unsub;
   }, [navigation]);
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => releaseSound();
-  }, []);
+  useEffect(() => () => releaseAll(), []);
 
-  const releaseSound = () => {
+  // ─── Sound helpers ────────────────────────────────────────────────────────────
+
+  /** Release everything — playing sound + any pending prefetch. */
+  const releaseAll = () => {
     if (soundRef.current) {
       soundRef.current.stop();
       soundRef.current.release();
       soundRef.current = null;
     }
+    // Increment ID first — in-flight prefetch callbacks will bail without double-releasing
+    prefetchIdRef.current += 1;
+    nextKeyRef.current = null;
+    nextReadyRef.current = false;
+    if (nextSoundRef.current) {
+      try { nextSoundRef.current.release(); } catch (_) {}
+      nextSoundRef.current = null;
+    }
   };
+
+  const stopAudio = useCallback(() => {
+    releaseAll();
+    setPlayingKey(null);
+    setIsPlaying(false);
+    setAudioBuffering(false);
+  }, []);
+
+  // ─── Lookahead prefetch ───────────────────────────────────────────────────────
+
+  /**
+   * Start buffering the ayah at `key` in the background so it is ready
+   * to play instantly when the current ayah finishes.
+   */
+  function prefetchKey(key: string) {
+    const item = ayahsRef.current.find(a => a.key === key);
+    if (!item || item.isSurahHeader || !item.globalNumber) return;
+    if (nextKeyRef.current === key) return; // already prefetching this one
+
+    // Cancel any previous prefetch
+    prefetchIdRef.current += 1;
+    const myId = prefetchIdRef.current;
+    nextKeyRef.current = key;
+    nextReadyRef.current = false;
+    if (nextSoundRef.current) {
+      try { nextSoundRef.current.release(); } catch (_) {}
+      nextSoundRef.current = null;
+    }
+
+    const url = `${AUDIO_BASE}/${item.globalNumber}.mp3`;
+    const sound = new Sound(url, '', (err: Error | null) => {
+      // If a newer prefetch was started, discard this result without double-releasing
+      if (prefetchIdRef.current !== myId) return;
+      if (err) {
+        nextSoundRef.current = null;
+        nextKeyRef.current = null;
+        nextReadyRef.current = false;
+      } else {
+        nextReadyRef.current = true;
+      }
+    });
+    nextSoundRef.current = sound;
+  }
+
+  // ─── Playback ─────────────────────────────────────────────────────────────────
+
+  function playFromKey(startKey: string) {
+    const item = ayahsRef.current.find(a => a.key === startKey);
+    if (!item || item.isSurahHeader || !item.globalNumber) {
+      setPlayingKey(null);
+      setIsPlaying(false);
+      setAudioBuffering(false);
+      return;
+    }
+
+    // Stop the currently-playing sound (leaves prefetch intact for reuse check below)
+    if (soundRef.current) {
+      soundRef.current.stop();
+      soundRef.current.release();
+      soundRef.current = null;
+    }
+
+    setPlayingKey(startKey);
+    setIsPlaying(true);
+
+    /** Returns the next playable ayah after startKey using a fresh ref read. */
+    const findNext = (): DisplayAyah | null => {
+      const all = ayahsRef.current;
+      const idx = all.findIndex(a => a.key === startKey);
+      return idx >= 0
+        ? all.slice(idx + 1).find(a => !a.isSurahHeader && a.globalNumber > 0) ?? null
+        : null;
+    };
+
+    /** Start playing a fully-loaded Sound instance. */
+    const beginPlay = (sound: Sound) => {
+      soundRef.current = sound;
+      Sound.setCategory('Playback');
+      setAudioBuffering(false);
+
+      // Kick off prefetch of the next ayah while this one plays
+      const next = findNext();
+      if (next) prefetchKey(next.key);
+
+      sound.play((success: boolean) => {
+        soundRef.current = null;
+        if (success) {
+          const next2 = findNext();
+          if (next2 && playFnRef.current) {
+            playFnRef.current(next2.key);
+          } else {
+            setPlayingKey(null);
+            setIsPlaying(false);
+          }
+        } else {
+          setPlayingKey(null);
+          setIsPlaying(false);
+        }
+      });
+    };
+
+    // ── Use prefetched sound if it's already buffered ──
+    const prefetchReady =
+      nextKeyRef.current === startKey &&
+      nextSoundRef.current !== null &&
+      nextReadyRef.current;
+
+    if (prefetchReady) {
+      const sound = nextSoundRef.current!;
+      // Detach from prefetch slots
+      prefetchIdRef.current += 1; // invalidate any stale callbacks
+      nextSoundRef.current = null;
+      nextKeyRef.current = null;
+      nextReadyRef.current = false;
+      beginPlay(sound); // instant — no buffering indicator
+      return;
+    }
+
+    // ── Cancel any stale / in-flight prefetch for a different (or same) key ──
+    prefetchIdRef.current += 1;
+    nextKeyRef.current = null;
+    nextReadyRef.current = false;
+    if (nextSoundRef.current) {
+      try { nextSoundRef.current.release(); } catch (_) {}
+      nextSoundRef.current = null;
+    }
+
+    // ── Load fresh ──
+    setAudioBuffering(true);
+    Sound.setCategory('Playback');
+    const url = `${AUDIO_BASE}/${item.globalNumber}.mp3`;
+    const sound = new Sound(url, '', (err: Error | null) => {
+      if (err) {
+        setPlayingKey(null);
+        setIsPlaying(false);
+        setAudioBuffering(false);
+        return;
+      }
+      beginPlay(sound);
+    });
+  }
+
+  // Keep ref pointing to latest closure so recursive auto-advance works
+  playFnRef.current = playFromKey;
+
+  const handleAyahPress = (item: DisplayAyah) => {
+    if (item.isSurahHeader || !item.globalNumber) return;
+    if (playingKey === item.key) {
+      stopAudio();
+    } else {
+      playFromKey(item.key);
+    }
+  };
+
+  // ─── Bookmarks ────────────────────────────────────────────────────────────────
+
+  const toggleBookmark = useCallback(async (globalNumber: number) => {
+    setBookmarkedAyahs(prev => {
+      const next = new Set(prev);
+      if (next.has(globalNumber)) {
+        next.delete(globalNumber);
+      } else {
+        next.add(globalNumber);
+      }
+      AsyncStorage.setItem(
+        BOOKMARKS_KEY,
+        JSON.stringify(Array.from(next)),
+      ).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // ─── Load content ─────────────────────────────────────────────────────────────
 
   const loadBookmarks = async () => {
     try {
@@ -180,115 +367,12 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     }
   };
 
-  // ─── Audio ───────────────────────────────────────────────────────────────────
-
-  const stopAudio = useCallback(() => {
-    releaseSound();
-    setPlayingKey(null);
-    setIsPlaying(false);
-    setAudioBuffering(false);
-  }, []);
-
-  // Core play function — exposed via ref so recursive calls always use fresh closure
-  function playFromKey(startKey: string) {
-    const all = ayahsRef.current;
-    const item = all.find(a => a.key === startKey);
-
-    if (!item || item.isSurahHeader || !item.globalNumber) {
-      setPlayingKey(null);
-      setIsPlaying(false);
-      setAudioBuffering(false);
-      return;
-    }
-
-    // Release previous before starting next
-    if (soundRef.current) {
-      soundRef.current.stop();
-      soundRef.current.release();
-      soundRef.current = null;
-    }
-
-    const url = `${AUDIO_BASE}/${item.globalNumber}.mp3`;
-
-    setPlayingKey(startKey);
-    setIsPlaying(true);
-    setAudioBuffering(true);
-
-    Sound.setCategory('Playback');
-
-    // eslint-disable-next-line @typescript-eslint/no-shadow
-    const sound = new Sound(url, '', (error: Error | null) => {
-      setAudioBuffering(false);
-
-      if (error) {
-        setPlayingKey(null);
-        setIsPlaying(false);
-        return;
-      }
-
-      soundRef.current = sound;
-
-      sound.play((success: boolean) => {
-        soundRef.current = null;
-
-        if (success) {
-          // Auto-advance to the next real ayah
-          const idx = all.findIndex(a => a.key === startKey);
-          const next = all
-            .slice(idx + 1)
-            .find(a => !a.isSurahHeader && a.globalNumber > 0);
-
-          if (next && playFnRef.current) {
-            playFnRef.current(next.key);
-          } else {
-            setPlayingKey(null);
-            setIsPlaying(false);
-          }
-        } else {
-          setPlayingKey(null);
-          setIsPlaying(false);
-        }
-      });
-    });
-  }
-
-  // Keep the ref pointing to the latest closure on every render
-  playFnRef.current = playFromKey;
-
-  const handleAyahPress = (item: DisplayAyah) => {
-    if (item.isSurahHeader || !item.globalNumber) return;
-    // If this ayah is already playing, stop
-    if (playingKey === item.key) {
-      stopAudio();
-    } else {
-      playFromKey(item.key);
-    }
-  };
-
-  // ─── Bookmarks ───────────────────────────────────────────────────────────────
-
-  const toggleBookmark = useCallback(async (globalNumber: number) => {
-    setBookmarkedAyahs(prev => {
-      const next = new Set(prev);
-      if (next.has(globalNumber)) {
-        next.delete(globalNumber);
-      } else {
-        next.add(globalNumber);
-      }
-      AsyncStorage.setItem(
-        BOOKMARKS_KEY,
-        JSON.stringify(Array.from(next)),
-      ).catch(() => {});
-      return next;
-    });
-  }, []);
-
-  // ─── UI helpers ──────────────────────────────────────────────────────────────
+  // ─── UI helpers ───────────────────────────────────────────────────────────────
 
   const cycleFontSize = () =>
     setFontSize(prev => (prev === 'sm' ? 'md' : prev === 'md' ? 'lg' : 'sm'));
 
-  // ─── Render helpers ──────────────────────────────────────────────────────────
+  // ─── Render helpers ───────────────────────────────────────────────────────────
 
   const renderSurahHeader = (item: DisplayAyah) => {
     const s = item.surahForHeader;
@@ -334,32 +418,54 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
         onPress={() => handleAyahPress(item)}
         activeOpacity={0.75}>
 
-        {/* Arabic row: verse badge on left, arabic text on right (RTL) */}
+        {/* Row: [bookmark badge + play btn] | [arabic text RTL] */}
         <View style={styles.ayahRow}>
-          {/* Verse number / bookmark / playing indicator */}
-          <TouchableOpacity
-            style={[
-              styles.verseNumBadge,
-              isBookmarked && !isCurrentlyPlaying && styles.verseNumBadgeBookmarked,
-              isCurrentlyPlaying && styles.verseNumBadgePlaying,
-            ]}
-            onPress={() => toggleBookmark(item.globalNumber)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            {isBufferingThis ? (
-              <ActivityIndicator size="small" color={theme.colors.white} />
-            ) : isCurrentlyPlaying ? (
-              <Icon name="volume-up" size={16} color={theme.colors.white} />
-            ) : (
-              <Text
-                style={[
-                  styles.verseNumText,
-                  isBookmarked && styles.verseNumTextBookmarked,
-                ]}>
-                {item.numberInSurah}
-              </Text>
-            )}
-          </TouchableOpacity>
 
+          {/* Left controls column */}
+          <View style={styles.leftControls}>
+
+            {/* Verse number / bookmark badge */}
+            <TouchableOpacity
+              style={[
+                styles.verseNumBadge,
+                isBookmarked && !isCurrentlyPlaying && styles.verseNumBadgeBookmarked,
+                isCurrentlyPlaying && styles.verseNumBadgePlaying,
+              ]}
+              onPress={() => toggleBookmark(item.globalNumber)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}>
+              {isCurrentlyPlaying ? (
+                <Icon name="volume-up" size={15} color={theme.colors.white} />
+              ) : (
+                <Text
+                  style={[
+                    styles.verseNumText,
+                    isBookmarked && styles.verseNumTextBookmarked,
+                  ]}>
+                  {item.numberInSurah}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Play / buffering / stop button */}
+            <TouchableOpacity
+              style={[
+                styles.playBtn,
+                isCurrentlyPlaying && !isBufferingThis && styles.playBtnStop,
+              ]}
+              onPress={() => handleAyahPress(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
+              {isBufferingThis ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : isCurrentlyPlaying ? (
+                <Icon name="stop" size={14} color={theme.colors.white} />
+              ) : (
+                <Icon name="play-arrow" size={14} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
+
+          </View>
+
+          {/* Arabic text */}
           <Text
             style={[
               styles.arabicText,
@@ -374,14 +480,6 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
         {showTranslation && item.englishText ? (
           <Text style={styles.translationText}>{item.englishText}</Text>
         ) : null}
-
-        {/* Play hint when not playing */}
-        {!isCurrentlyPlaying && (
-          <View style={styles.tapHint}>
-            <Icon name="play-circle-outline" size={13} color={theme.colors.textSecondary + '60'} />
-            <Text style={styles.tapHintText}>Tap to recite</Text>
-          </View>
-        )}
 
         <View style={styles.ayahDivider} />
       </TouchableOpacity>
@@ -407,7 +505,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     );
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container}>
@@ -415,7 +513,6 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        {/* Back button — arrow-back is the correct MaterialIcons name */}
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerBtn}>
@@ -679,25 +776,34 @@ const styles = StyleSheet.create({
   ayahCardPlaying: {
     backgroundColor: theme.colors.primary + '0D', // ~5% green tint
   },
+
+  // Ayah row: [left controls] | [arabic text RTL]
   ayahRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'flex-end',
   },
 
-  // Verse number badge
+  // Left controls: verse badge + play button side by side
+  leftControls: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginLeft: theme.spacing.sm,
+    flexShrink: 0,
+  },
+
+  // Verse number badge (taps to toggle bookmark)
   verseNumBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1.5,
     borderColor: theme.colors.accentGold + '80',
     backgroundColor: theme.colors.white,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
-    marginLeft: theme.spacing.sm,
-    flexShrink: 0,
   },
   verseNumBadgeBookmarked: {
     backgroundColor: theme.colors.accentGold,
@@ -717,6 +823,22 @@ const styles = StyleSheet.create({
     color: theme.colors.white,
   },
 
+  // Play / stop button
+  playBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary + '55',
+    backgroundColor: theme.colors.primary + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playBtnStop: {
+    backgroundColor: '#C0392B',
+    borderColor: '#C0392B',
+  },
+
   // Arabic text
   arabicText: {
     flex: 1,
@@ -725,6 +847,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     lineHeight: 72,
     writingDirection: 'rtl',
+    paddingLeft: theme.spacing.sm,
   },
   arabicTextPlaying: {
     color: theme.colors.primary,
@@ -741,20 +864,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: theme.colors.primary + '40',
     marginLeft: theme.spacing.sm,
-  },
-
-  // Tap hint
-  tapHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 4,
-    marginLeft: theme.spacing.sm,
-  },
-  tapHintText: {
-    fontSize: 10,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary + '60',
   },
 
   // Divider
