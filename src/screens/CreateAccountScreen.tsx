@@ -8,9 +8,13 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
+import { userAPI, setAuthToken } from '../services/api';
+import { validateEmail, validatePassword, validateName } from '../utils/validation';
 
 interface CreateAccountScreenProps {
     navigation: any;
@@ -23,10 +27,50 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleCreateAccount = () => {
-        // TODO: Implement create account logic
-        navigation.replace('MainTabs');
+    const handleCreateAccount = async () => {
+        const nErr = validateName(fullName);
+        if (nErr) {
+            Alert.alert('Name', nErr);
+            return;
+        }
+        const eErr = validateEmail(email);
+        if (eErr) {
+            Alert.alert('Email', eErr);
+            return;
+        }
+        const pErr = validatePassword(password);
+        if (pErr) {
+            Alert.alert('Password', pErr);
+            return;
+        }
+        if (password !== confirmPassword) {
+            Alert.alert('Error', 'Passwords do not match.');
+            return;
+        }
+        setLoading(true);
+        try {
+            const { data } = await userAPI.register({
+                email: email.trim(),
+                password,
+                name: fullName.trim() || undefined,
+            });
+            if (data?.success && data?.data?.token) {
+                await setAuthToken(data.data.token);
+                navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'VerifyEmail' }],
+                });
+            } else {
+                Alert.alert('Error', data?.error?.message || 'Registration failed.');
+            }
+        } catch (err: any) {
+            const msg = err.response?.data?.error?.message || err.message || 'Registration failed.';
+            Alert.alert('Error', msg);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -117,8 +161,15 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
                         </View>
                     </View>
 
-                    <TouchableOpacity style={styles.createButton} onPress={handleCreateAccount}>
-                        <Text style={styles.createButtonText}>Create Account</Text>
+                    <TouchableOpacity
+                        style={[styles.createButton, loading && { opacity: 0.7 }]}
+                        onPress={handleCreateAccount}
+                        disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator color={theme.colors.white} />
+                        ) : (
+                            <Text style={styles.createButtonText}>Create Account</Text>
+                        )}
                     </TouchableOpacity>
 
                     <TouchableOpacity

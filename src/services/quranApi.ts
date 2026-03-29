@@ -47,25 +47,34 @@ export const fetchAllSurahs = async (): Promise<SurahMeta[]> => {
   return res.data.data as SurahMeta[];
 };
 
+export type TranslationLang = 'en' | 'ur';
+
+const ENGLISH_EDITION = 'en.sahih';
+const URDU_EDITION = 'ur.jalandhry';
+
 export const fetchSurah = async (
   surahNumber: number,
-): Promise<{ arabic: SurahContent; english: SurahContent }> => {
+  translationLang: TranslationLang = 'en',
+): Promise<{ arabic: SurahContent; translation: SurahContent }> => {
+  const edition = translationLang === 'ur' ? URDU_EDITION : ENGLISH_EDITION;
   const res = await client.get(
-    `/surah/${surahNumber}/editions/quran-uthmani,en.sahih`,
+    `/surah/${surahNumber}/editions/quran-uthmani,${edition}`,
   );
-  const [arabic, english] = res.data.data;
-  return { arabic, english };
+  const [arabic, translation] = res.data.data;
+  return { arabic, translation };
 };
 
 export const fetchJuz = async (
   juzNumber: number,
-): Promise<{ arabic: JuzContent; english: JuzContent }> => {
-  const [arabicRes, englishRes] = await Promise.all([
+  translationLang: TranslationLang = 'en',
+): Promise<{ arabic: JuzContent; translation: JuzContent }> => {
+  const edition = translationLang === 'ur' ? URDU_EDITION : ENGLISH_EDITION;
+  const [arabicRes, translationRes] = await Promise.all([
     client.get(`/juz/${juzNumber}/quran-uthmani`),
-    client.get(`/juz/${juzNumber}/en.sahih`),
+    client.get(`/juz/${juzNumber}/${edition}`),
   ]);
   return {
     arabic: arabicRes.data.data as JuzContent,
-    english: englishRes.data.data as JuzContent,
+    translation: translationRes.data.data as JuzContent,
   };
 };

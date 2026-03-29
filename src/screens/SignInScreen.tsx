@@ -8,9 +8,13 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
+import { userAPI, setAuthToken } from '../services/api';
+import { validateEmail } from '../utils/validation';
 
 interface SignInScreenProps {
     navigation: any;
@@ -22,10 +26,60 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
     const [showPassword, setShowPassword] = useState(false);
     const [emailFocused, setEmailFocused] = useState(false);
     const [passwordFocused, setPasswordFocused] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleSignIn = () => {
-        // TODO: Implement sign in logic
-        navigation.replace('MainTabs');
+    const handleSignIn = async () => {
+        const eErr = validateEmail(email);
+        if (eErr) {
+            Alert.alert('Email', eErr);
+            return;
+        }
+        if (!password) {
+            Alert.alert('Password', 'Please enter your password.');
+            return;
+        }
+        setLoading(true);
+        try {
+            const { data } = await userAPI.login({ email: email.trim(), password });
+            if (!data?.success || !data?.data) {
+                Alert.alert('Error', data?.error?.message || 'Sign in failed.');
+                return;
+            }
+            const payload = data.data as {
+                requiresTwoFactor?: boolean;
+                twoFactorToken?: string;
+                token?: string;
+                user?: { emailVerified?: boolean; email?: string };
+            };
+            if (payload.requiresTwoFactor && payload.twoFactorToken) {
+                navigation.navigate('TwoFactorLogin', {
+                    twoFactorToken: payload.twoFactorToken,
+                    emailHint: payload.user?.email,
+                });
+                return;
+            }
+            if (payload.token) {
+                await setAuthToken(payload.token);
+                if (payload.user && payload.user.emailVerified === false) {
+                    navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'VerifyEmail' }],
+                    });
+                } else {
+                    navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'MainTabs' }],
+                    });
+                }
+            } else {
+                Alert.alert('Error', 'Sign in failed.');
+            }
+        } catch (err: any) {
+            const msg = err.response?.data?.error?.message || err.message || 'Sign in failed.';
+            Alert.alert('Error', msg);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -65,7 +119,13 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                     <View style={styles.inputGroup}>
                         <View style={styles.passwordLabelRow}>
                             <Text style={styles.label}>PASSWORD</Text>
-                            <TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() =>
+                                    Alert.alert(
+                                        'Reset password',
+                                        'After you sign in, open Profile, then Security, and use Update password. We confirm changes with an email code.',
+                                    )
+                                }>
                                 <Text style={styles.forgotText}>Forgot?</Text>
                             </TouchableOpacity>
                         </View>
@@ -95,8 +155,15 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                         </View>
                     </View>
 
-                    <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-                        <Text style={styles.signInButtonText}>Sign In</Text>
+                    <TouchableOpacity
+                        style={[styles.signInButton, loading && styles.buttonDisabled]}
+                        onPress={handleSignIn}
+                        disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator color={theme.colors.white} />
+                        ) : (
+                            <Text style={styles.signInButtonText}>Sign In</Text>
+                        )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -250,6 +317,9 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontFamily: theme.fonts.button,
         fontWeight: '600',
+    },
+    buttonDisabled: {
+        opacity: 0.7,
     },
     createAccountLink: {
         alignItems: 'center',

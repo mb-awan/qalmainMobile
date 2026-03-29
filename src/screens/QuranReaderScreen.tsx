@@ -8,15 +8,18 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Sound from 'react-native-sound';
+import Tts from 'react-native-tts';
 import { theme } from '../theme/colors';
 import {
   fetchSurah,
   fetchJuz,
   SurahContent,
+  TranslationLang,
 } from '../services/quranApi';
 
 // AlQuran.cloud CDN — same ecosystem as api.alquran.cloud, completely free
@@ -31,7 +34,7 @@ interface QuranReaderScreenProps {
 interface DisplayAyah {
   key: string;
   arabicText: string;
-  englishText: string;
+  translationText: string;
   numberInSurah: number;
   globalNumber: number;
   surahNumber?: number;
@@ -49,7 +52,9 @@ interface DisplayAyah {
 }
 
 const BOOKMARKS_KEY = 'bookmarkedAyahs';
-const FONT_SIZES = { sm: 32, md: 40, lg: 50 } as const;
+// Larger, readable Arabic with clear diacritics (tashkeel)
+const FONT_SIZES = { sm: 36, md: 44, lg: 56 } as const;
+const ARABIC_LINE_HEIGHT_MULTIPLIER = 1.85;
 
 const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
   const surahNumber: number | undefined = route?.params?.surahNumber;
@@ -64,6 +69,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   // Reader UI state
   const [showTranslation, setShowTranslation] = useState(true);
+  const [translationLang, setTranslationLang] = useState<TranslationLang>('en');
   const [bookmarkedAyahs, setBookmarkedAyahs] = useState<Set<number>>(new Set());
   const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg'>('md');
 
@@ -88,6 +94,10 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   // Keep ayahsRef fresh on every render
   ayahsRef.current = ayahs;
+  const showTranslationRef = useRef(showTranslation);
+  const translationLangRef = useRef(translationLang);
+  showTranslationRef.current = showTranslation;
+  translationLangRef.current = translationLang;
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -95,7 +105,12 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     loadBookmarks();
     loadContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surahNumber, juzNumber]);
+  }, [surahNumber, juzNumber, translationLang]);
+
+  useEffect(() => {
+    Tts.setDefaultRate(0.48);
+    Tts.getInitStatus().catch(() => {});
+  }, []);
 
   // Stop audio when navigating away
   useEffect(() => {
@@ -106,16 +121,40 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
   // Cleanup on unmount
   useEffect(() => () => releaseAll(), []);
 
+  // Auto-scroll to the currently playing ayah so it stays in view
+  useEffect(() => {
+    if (!playingKey || !listRef.current) return;
+    const index = ayahs.findIndex(a => a.key === playingKey);
+    if (index >= 0) {
+      const t = setTimeout(() => {
+        try {
+          listRef.current?.scrollToIndex({
+            index,
+            viewPosition: 0.25,
+            animated: true,
+          });
+        } catch (_) {
+          // Fallback: scrollToOffset if index not yet laid out
+          listRef.current?.scrollToOffset({
+            offset: Math.max(0, index * 120),
+            animated: true,
+          });
+        }
+      }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [playingKey, ayahs]);
+
   // ─── Sound helpers ────────────────────────────────────────────────────────────
 
-  /** Release everything — playing sound + any pending prefetch. */
+  /** Release everything — playing sound + any pending prefetch, and stop TTS. */
   const releaseAll = () => {
+    try { Tts.stop(); } catch (_) {}
     if (soundRef.current) {
       soundRef.current.stop();
       soundRef.current.release();
       soundRef.current = null;
     }
-    // Increment ID first — in-flight prefetch callbacks will bail without double-releasing
     prefetchIdRef.current += 1;
     nextKeyRef.current = null;
     nextReadyRef.current = false;
@@ -204,20 +243,30 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
       Sound.setCategory('Playback');
       setAudioBuffering(false);
 
-      // Kick off prefetch of the next ayah while this one plays
       const next = findNext();
       if (next) prefetchKey(next.key);
 
       sound.play((success: boolean) => {
         soundRef.current = null;
-        if (success) {
-          const next2 = findNext();
-          if (next2 && playFnRef.current) {
-            playFnRef.current(next2.key);
-          } else {
-            setPlayingKey(null);
-            setIsPlaying(false);
-          }
+        if (!success) {
+          setPlayingKey(null);
+          setIsPlaying(false);
+          return;
+        }
+        const next2 = findNext();
+        const showTrans = showTranslationRef.current;
+        const transLang = translationLangRef.current;
+        const textToSpeak = item.translationText?.trim();
+        if (showTrans && textToSpeak && next2 && playFnRef.current) {
+          const lang = transLang === 'ur' ? (Platform.OS === 'ios' ? 'ur-PK' : 'ur_PK') : 'en-US';
+          Tts.setDefaultLanguage(lang).catch(() => {});
+          const sub = Tts.addEventListener('finish', () => {
+            sub.remove();
+            playFnRef.current!(next2.key);
+          });
+          Tts.speak(textToSpeak);
+        } else if (next2 && playFnRef.current) {
+          playFnRef.current(next2.key);
         } else {
           setPlayingKey(null);
           setIsPlaying(false);
@@ -314,20 +363,20 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
       stopAudio();
 
       if (surahNumber) {
-        const { arabic, english } = await fetchSurah(surahNumber);
+        const { arabic, translation } = await fetchSurah(surahNumber, translationLang);
         setSurahMeta(arabic);
         const items: DisplayAyah[] = arabic.ayahs.map((a, i) => ({
           key: `ayah-${a.number}`,
           arabicText: a.text,
-          englishText: english.ayahs[i]?.text ?? '',
+          translationText: translation.ayahs[i]?.text ?? '',
           numberInSurah: a.numberInSurah,
           globalNumber: a.number,
         }));
         setAyahs(items);
       } else if (juzNumber) {
-        const { arabic, english } = await fetchJuz(juzNumber);
-        const engMap = new Map<number, string>();
-        english.ayahs.forEach(a => engMap.set(a.number, a.text));
+        const { arabic, translation } = await fetchJuz(juzNumber, translationLang);
+        const transMap = new Map<number, string>();
+        translation.ayahs.forEach(a => transMap.set(a.number, a.text));
 
         const result: DisplayAyah[] = [];
         let lastSurahNum = -1;
@@ -338,7 +387,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
             result.push({
               key: `header-${currentSurah}`,
               arabicText: '',
-              englishText: '',
+              translationText: '',
               numberInSurah: 0,
               globalNumber: 0,
               isSurahHeader: true,
@@ -349,7 +398,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
           result.push({
             key: `ayah-${a.number}`,
             arabicText: a.text,
-            englishText: engMap.get(a.number) ?? '',
+            translationText: transMap.get(a.number) ?? '',
             numberInSurah: a.numberInSurah,
             globalNumber: a.number,
             surahNumber: currentSurah,
@@ -465,20 +514,29 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
           </View>
 
-          {/* Arabic text */}
+          {/* Arabic text — large, clear diacritics (tashkeel), RTL */}
           <Text
             style={[
               styles.arabicText,
-              { fontSize: FONT_SIZES[fontSize] },
+              {
+                fontSize: FONT_SIZES[fontSize],
+                lineHeight: FONT_SIZES[fontSize] * ARABIC_LINE_HEIGHT_MULTIPLIER,
+              },
               isCurrentlyPlaying && styles.arabicTextPlaying,
             ]}>
             {item.arabicText}
           </Text>
         </View>
 
-        {/* Translation */}
-        {showTranslation && item.englishText ? (
-          <Text style={styles.translationText}>{item.englishText}</Text>
+        {/* Translation (English or Urdu) */}
+        {showTranslation && item.translationText ? (
+          <Text
+            style={[
+              styles.translationText,
+              translationLang === 'ur' && styles.translationTextRtl,
+            ]}>
+            {item.translationText}
+          </Text>
         ) : null}
 
         <View style={styles.ayahDivider} />
@@ -560,30 +618,72 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
           keyExtractor={item => item.key}
           ListHeaderComponent={renderListHeader}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={10}
+          showsVerticalScrollIndicator={true}
+          initialNumToRender={12}
           maxToRenderPerBatch={15}
           windowSize={10}
+          onScrollToIndexFailed={info => {
+            const wait = new Promise(resolve => setTimeout(resolve, 200));
+            wait.then(() => {
+              listRef.current?.scrollToOffset({
+                offset: Math.min(info.averageItemLength * info.index, 999999),
+                animated: true,
+              });
+            });
+          }}
         />
       )}
 
       {/* ── Bottom toolbar ── */}
       {!loading && !error && (
         <View style={styles.toolbar}>
-
-          {/* Translation toggle */}
-          <TouchableOpacity
-            style={[styles.toolbarBtn, showTranslation && styles.toolbarBtnActive]}
-            onPress={() => setShowTranslation(v => !v)}>
-            <Icon
-              name="translate"
-              size={22}
-              color={showTranslation ? theme.colors.white : theme.colors.textSecondary}
-            />
-            <Text style={[styles.toolbarLabel, showTranslation && styles.toolbarLabelActive]}>
-              Translation
-            </Text>
-          </TouchableOpacity>
+          {/* Translation toggle + language (English / Urdu) */}
+          <View style={styles.toolbarTranslationGroup}>
+            <TouchableOpacity
+              style={[styles.toolbarBtn, showTranslation && styles.toolbarBtnActive]}
+              onPress={() => setShowTranslation(v => !v)}>
+              <Icon
+                name="translate"
+                size={22}
+                color={showTranslation ? theme.colors.white : theme.colors.textSecondary}
+              />
+              <Text style={[styles.toolbarLabel, showTranslation && styles.toolbarLabelActive]}>
+                Translation
+              </Text>
+            </TouchableOpacity>
+            {showTranslation && (
+              <View style={styles.translationLangRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.translationLangChip,
+                    translationLang === 'en' && styles.translationLangChipActive,
+                  ]}
+                  onPress={() => setTranslationLang('en')}>
+                  <Text
+                    style={[
+                      styles.translationLangChipText,
+                      translationLang === 'en' && styles.translationLangChipTextActive,
+                    ]}>
+                    English
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.translationLangChip,
+                    translationLang === 'ur' && styles.translationLangChipActive,
+                  ]}
+                  onPress={() => setTranslationLang('ur')}>
+                  <Text
+                    style={[
+                      styles.translationLangChipText,
+                      translationLang === 'ur' && styles.translationLangChipTextActive,
+                    ]}>
+                    Urdu
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
           {/* AI Qari mic (centre) */}
           <TouchableOpacity
@@ -839,15 +939,16 @@ const styles = StyleSheet.create({
     borderColor: '#C0392B',
   },
 
-  // Arabic text
+  // Arabic text — Amiri for clear diacritics (tashkeel), RTL
   arabicText: {
     flex: 1,
     fontFamily: theme.fonts.quran,
-    color: '#101917',
+    color: '#0D1512',
     textAlign: 'right',
-    lineHeight: 72,
+    lineHeight: 80,
     writingDirection: 'rtl',
     paddingLeft: theme.spacing.sm,
+    letterSpacing: 0.5,
   },
   arabicTextPlaying: {
     color: theme.colors.primary,
@@ -855,15 +956,50 @@ const styles = StyleSheet.create({
 
   // Translation
   translationText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: theme.fonts.body,
     color: theme.colors.textSecondary,
-    lineHeight: 22,
+    lineHeight: 24,
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.sm,
-    borderLeftWidth: 2,
-    borderLeftColor: theme.colors.primary + '40',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary + '50',
     marginLeft: theme.spacing.sm,
+  },
+  translationTextRtl: {
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    borderLeftWidth: 0,
+    borderRightWidth: 3,
+    borderRightColor: theme.colors.primary + '50',
+    marginLeft: 0,
+    marginRight: theme.spacing.sm,
+  },
+  toolbarTranslationGroup: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  translationLangRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 2,
+  },
+  translationLangChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.borderSubtle,
+  },
+  translationLangChipActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  translationLangChipText: {
+    fontSize: 11,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.textSecondary,
+  },
+  translationLangChipTextActive: {
+    color: theme.colors.white,
   },
 
   // Divider

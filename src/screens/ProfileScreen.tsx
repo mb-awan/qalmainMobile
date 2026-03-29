@@ -1,25 +1,83 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme/colors';
+import { userAPI, clearAuthToken } from '../services/api';
+import { resetToSignIn } from '../navigation/navigationRef';
 
 interface ProfileScreenProps {
     navigation: any;
 }
 
 const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
+    const [userName, setUserName] = useState('');
+    const [userEmail, setUserEmail] = useState('');
+    const [emailVerified, setEmailVerified] = useState(true);
+    const [profileLoading, setProfileLoading] = useState(true);
+
+    const loadProfile = useCallback(async () => {
+        setProfileLoading(true);
+        try {
+            const { data } = await userAPI.getProfile();
+            const u = data?.data?.user;
+            if (u) {
+                setUserName(u.name || '');
+                setUserEmail(u.email || '');
+                setEmailVerified(u.emailVerified !== false);
+            }
+        } catch {
+            /* 401 clears session */
+        } finally {
+            setProfileLoading(false);
+        }
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void loadProfile();
+        }, [loadProfile])
+    );
+
+    const handleLogout = () => {
+        Alert.alert('Log out?', 'You will need to sign in again to use your account.', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Log out',
+                style: 'destructive',
+                onPress: async () => {
+                    await clearAuthToken();
+                    resetToSignIn();
+                },
+            },
+        ]);
+    };
+
     const menuItems = [
         {
             id: 'edit',
             icon: 'person',
             label: 'Edit Profile',
-            action: () => { },
+            action: () =>
+                Alert.alert(
+                    'Edit profile',
+                    'Name and email can be updated from account settings on the web admin soon. For security changes, use the settings icon.',
+                ),
+        },
+        {
+            id: 'security',
+            icon: 'shield',
+            label: 'Account security',
+            subtitle: 'Password, email verification, 2-step',
+            action: () => navigation.navigate('AccountSecurity'),
         },
         {
             id: 'subscription',
@@ -57,7 +115,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             icon: 'logout',
             label: 'Log Out',
             isDestructive: true,
-            action: () => { },
+            action: handleLogout,
         },
     ];
 
@@ -68,7 +126,9 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                     <Icon name="arrow-back-ios" size={20} color={theme.colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Profile</Text>
-                <TouchableOpacity>
+                <TouchableOpacity
+                    onPress={() => navigation.navigate('AccountSecurity')}
+                    accessibilityLabel="Security settings">
                     <Icon name="settings" size={24} color={theme.colors.primary} />
                 </TouchableOpacity>
             </View>
@@ -79,12 +139,27 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                         {/* In production, use Image component with actual profile picture */}
                         <Icon name="person" size={60} color={theme.colors.primary} />
                     </View>
-                    <View style={styles.verifiedBadge}>
-                        <Icon name="verified" size={14} color={theme.colors.white} />
-                    </View>
+                    {emailVerified && (
+                        <View style={styles.verifiedBadge}>
+                            <Icon name="verified" size={14} color={theme.colors.white} />
+                        </View>
+                    )}
                 </View>
-                <Text style={styles.userName}>Ahmed Khan</Text>
-                <Text style={styles.userRole}>Student of Quran</Text>
+                {profileLoading ? (
+                    <ActivityIndicator
+                        style={{ marginVertical: theme.spacing.md }}
+                        color={theme.colors.primary}
+                    />
+                ) : (
+                    <>
+                        <Text style={styles.userName}>
+                            {userName || 'Learner'}
+                        </Text>
+                        <Text style={styles.userRole} numberOfLines={1}>
+                            {userEmail || ' '}
+                        </Text>
+                    </>
+                )}
             </View>
 
             <View style={styles.statsSection}>
