@@ -15,6 +15,8 @@ import SignInScreen from '../screens/SignInScreen';
 import CreateAccountScreen from '../screens/CreateAccountScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import TwoFactorLoginScreen from '../screens/TwoFactorLoginScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import QuranReaderScreen from '../screens/QuranReaderScreen';
 import BookmarksScreen from '../screens/BookmarksScreen';
@@ -217,6 +219,16 @@ export default function AppNavigator(): React.JSX.Element {
         <Stack.Screen
           name="TwoFactorLogin"
           component={TwoFactorLoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ResetPassword"
+          component={ResetPasswordScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

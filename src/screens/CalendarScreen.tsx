@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {theme} from '../theme/colors';
@@ -18,7 +17,6 @@ interface IslamicEvent {
 }
 
 const CalendarScreen = () => {
-  const [selectedDate] = useState(new Date());
   const [hijriDate, setHijriDate] = useState('');
   const [gregorianDate, setGregorianDate] = useState('');
 

@@ -11,7 +11,7 @@ import {Camera, useCameraDevice} from 'react-native-vision-camera';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {theme} from '../theme/colors';
 
-const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
+const {height: SCREEN_HEIGHT} = Dimensions.get('window');
 const CAMERA_HEIGHT = SCREEN_HEIGHT * 0.3;
 
 interface AIQariScreenProps {
@@ -19,10 +19,10 @@ interface AIQariScreenProps {
 }
 
 const AIQariScreen = ({navigation}: AIQariScreenProps) => {
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, _setIsActive] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [isReciting, setIsReciting] = useState(false);
-  const [aiMessage, setAiMessage] = useState('Beta, thora sa dhyan yahan rakhein ✨');
+  const [aiMessage, _setAiMessage] = useState('Beta, thora sa dhyan yahan rakhein ✨');
   const [showMessage, setShowMessage] = useState(true);
   const [isFocused, setIsFocused] = useState(true);
   const device = useCameraDevice('front');

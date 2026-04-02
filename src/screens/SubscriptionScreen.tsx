@@ -60,7 +60,7 @@ const SubscriptionScreen = ({navigation}: SubscriptionScreenProps) => {
           Learn the Quran with focus, clarity, and consistency
         </Text>
 
-          {plans.map((plan, index) => (
+          {plans.map(plan => (
             <View
               key={plan.id}
               style={[
@@ -72,7 +72,7 @@ const SubscriptionScreen = ({navigation}: SubscriptionScreenProps) => {
                   <Text style={styles.badgeText}>{plan.badge}</Text>
                 </View>
               )}
-              {plan.badge && <View style={{height: 8}} />}
+              {plan.badge && <View style={styles.badgeSpacer} />}
 
             <Text style={styles.planTitle}>{plan.title}</Text>
             <View style={styles.priceRow}>
@@ -143,6 +143,9 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 24,
+  },
+  badgeSpacer: {
+    height: 8,
   },
   content: {
     padding: theme.spacing.xl,

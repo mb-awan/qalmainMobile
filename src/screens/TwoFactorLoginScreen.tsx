@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
 import { userAPI, setAuthToken } from '../services/api';
 import { validateOtp } from '../utils/validation';
+import { ModalMessage } from '../components/ModalMessage';
 
 interface Props {
   navigation: {
@@ -32,21 +32,37 @@ const TwoFactorLoginScreen = ({ navigation, route }: Props) => {
   const [otp, setOtp] = useState('');
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    variant: 'info' | 'success' | 'error';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    variant: 'info',
+    title: '',
+    message: '',
+  });
+
+  const otpError = useMemo(() => validateOtp(otp), [otp]);
 
   useEffect(() => {
     if (!twoFactorToken) {
-      Alert.alert('Session error', 'Please sign in again.', [
-        { text: 'OK', onPress: () => navigation.replace('SignIn') },
-      ]);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Session error',
+        message: 'Please sign in again.',
+      });
     }
   }, [twoFactorToken, navigation]);
 
   const submit = async () => {
-    const err = validateOtp(otp);
-    if (err) {
-      Alert.alert('Check code', err);
-      return;
-    }
+    setTouched(true);
+    setSubmitError(null);
+    if (otpError) return;
     setLoading(true);
     try {
       const { data } = await userAPI.verify2faLogin({
@@ -68,7 +84,7 @@ const TwoFactorLoginScreen = ({ navigation, route }: Props) => {
           });
         }
       } else {
-        Alert.alert('Error', data?.error?.message || 'Verification failed.');
+        setSubmitError(data?.error?.message || 'Verification failed.');
       }
     } catch (e: unknown) {
       const msg =
@@ -76,7 +92,7 @@ const TwoFactorLoginScreen = ({ navigation, route }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Verification failed.';
-      Alert.alert('Error', msg);
+      setSubmitError(msg);
     } finally {
       setLoading(false);
     }
@@ -116,16 +132,23 @@ const TwoFactorLoginScreen = ({ navigation, route }: Props) => {
             value={otp}
             onChangeText={t => setOtp(t.replace(/[^\d\s]/g, ''))}
             onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onBlur={() => {
+              setFocused(false);
+              setTouched(true);
+            }}
             keyboardType="number-pad"
             maxLength={8}
             autoComplete="one-time-code"
+            includeFontPadding={false}
+            textAlignVertical="center"
           />
+          {touched && otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
+          {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
 
           <TouchableOpacity
             style={[styles.primaryBtn, loading && styles.btnDisabled]}
             onPress={submit}
-            disabled={loading}>
+            disabled={loading || Boolean(otpError)}>
             {loading ? (
               <ActivityIndicator color={theme.colors.white} />
             ) : (
@@ -134,6 +157,15 @@ const TwoFactorLoginScreen = ({ navigation, route }: Props) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <ModalMessage
+        visible={modal.visible}
+        variant={modal.variant}
+        title={modal.title}
+        message={modal.message}
+        primaryText="OK"
+        onPrimary={() => navigation.replace('SignIn')}
+        onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -217,6 +249,14 @@ const styles = StyleSheet.create({
   },
   inputFocused: {
     borderColor: theme.colors.primary,
+  },
+  errorText: {
+    marginTop: 8,
+    marginLeft: 4,
+    fontSize: 12,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.error,
+    lineHeight: 16,
   },
   primaryBtn: {
     backgroundColor: theme.colors.primary,

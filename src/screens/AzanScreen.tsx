@@ -36,7 +36,8 @@ const AzanScreen = () => {
 
   useEffect(() => {
     if (location) {
-      fetchPrayerTimes();
+      const times = calculatePrayerTimes(calculationMethod);
+      setPrayerTimes(times);
     }
   }, [location, calculationMethod]);
 
@@ -92,7 +93,6 @@ const AzanScreen = () => {
   const calculatePrayerTimes = (method: CalculationMethod) => {
     // Simplified prayer time calculation
     // In production, use a proper library like adhan-js
-    const now = new Date();
     const times: PrayerTime[] = [
       {name: 'Fajr', time: '05:30 AM', icon: '🌅'},
       {name: 'Dhuhr', time: '12:15 PM', icon: '☀️'},
@@ -106,11 +106,6 @@ const AzanScreen = () => {
       {name: 'Isha', time: '07:45 PM', icon: '🌙'},
     ];
     return times;
-  };
-
-  const fetchPrayerTimes = async () => {
-    const times = calculatePrayerTimes(calculationMethod);
-    setPrayerTimes(times);
   };
 
   return (

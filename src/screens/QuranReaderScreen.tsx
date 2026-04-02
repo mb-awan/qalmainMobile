@@ -133,7 +133,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
             viewPosition: 0.25,
             animated: true,
           });
-        } catch (_) {
+        } catch {
           // Fallback: scrollToOffset if index not yet laid out
           listRef.current?.scrollToOffset({
             offset: Math.max(0, index * 120),
@@ -149,7 +149,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   /** Release everything — playing sound + any pending prefetch, and stop TTS. */
   const releaseAll = () => {
-    try { Tts.stop(); } catch (_) {}
+    try { Tts.stop(); } catch {}
     if (soundRef.current) {
       soundRef.current.stop();
       soundRef.current.release();
@@ -159,7 +159,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     nextKeyRef.current = null;
     nextReadyRef.current = false;
     if (nextSoundRef.current) {
-      try { nextSoundRef.current.release(); } catch (_) {}
+      try { nextSoundRef.current.release(); } catch {}
       nextSoundRef.current = null;
     }
   };
@@ -188,7 +188,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     nextKeyRef.current = key;
     nextReadyRef.current = false;
     if (nextSoundRef.current) {
-      try { nextSoundRef.current.release(); } catch (_) {}
+      try { nextSoundRef.current.release(); } catch {}
       nextSoundRef.current = null;
     }
 
@@ -296,7 +296,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
     nextKeyRef.current = null;
     nextReadyRef.current = false;
     if (nextSoundRef.current) {
-      try { nextSoundRef.current.release(); } catch (_) {}
+      try { nextSoundRef.current.release(); } catch {}
       nextSoundRef.current = null;
     }
 

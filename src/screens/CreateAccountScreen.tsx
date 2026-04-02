@@ -1,20 +1,20 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    TextInput,
     TouchableOpacity,
     ScrollView,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
 import { userAPI, setAuthToken } from '../services/api';
 import { validateEmail, validatePassword, validateName } from '../utils/validation';
+import { FormField } from '../components/FormField';
+import { ModalMessage } from '../components/ModalMessage';
 
 interface CreateAccountScreenProps {
     navigation: any;
@@ -28,25 +28,66 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [touched, setTouched] = useState<{
+        fullName: boolean;
+        email: boolean;
+        password: boolean;
+        confirmPassword: boolean;
+    }>({
+        fullName: false,
+        email: false,
+        password: false,
+        confirmPassword: false,
+    });
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [modal, setModal] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        variant?: 'info' | 'success' | 'error';
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        variant: 'info',
+    });
+
+    const errors = useMemo(() => {
+        const nErr = validateName(fullName);
+        const eErr = validateEmail(email);
+        const pErr = validatePassword(password);
+        const cErr = !confirmPassword
+            ? 'Please confirm your password.'
+            : password !== confirmPassword
+                ? 'Passwords do not match.'
+                : null;
+        return { fullName: nErr, email: eErr, password: pErr, confirmPassword: cErr };
+    }, [confirmPassword, email, fullName, password]);
+
+    const canSubmit = useMemo(() => {
+        return (
+            !loading &&
+            !errors.fullName &&
+            !errors.email &&
+            !errors.password &&
+            !errors.confirmPassword
+        );
+    }, [errors, loading]);
 
     const handleCreateAccount = async () => {
-        const nErr = validateName(fullName);
-        if (nErr) {
-            Alert.alert('Name', nErr);
-            return;
-        }
-        const eErr = validateEmail(email);
-        if (eErr) {
-            Alert.alert('Email', eErr);
-            return;
-        }
-        const pErr = validatePassword(password);
-        if (pErr) {
-            Alert.alert('Password', pErr);
-            return;
-        }
-        if (password !== confirmPassword) {
-            Alert.alert('Error', 'Passwords do not match.');
+        setTouched({
+            fullName: true,
+            email: true,
+            password: true,
+            confirmPassword: true,
+        });
+        setSubmitError(null);
+        if (
+            errors.fullName ||
+            errors.email ||
+            errors.password ||
+            errors.confirmPassword
+        ) {
             return;
         }
         setLoading(true);
@@ -63,11 +104,11 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
                     routes: [{ name: 'VerifyEmail' }],
                 });
             } else {
-                Alert.alert('Error', data?.error?.message || 'Registration failed.');
+                setSubmitError(data?.error?.message || 'Registration failed.');
             }
         } catch (err: any) {
             const msg = err.response?.data?.error?.message || err.message || 'Registration failed.';
-            Alert.alert('Error', msg);
+            setSubmitError(msg);
         } finally {
             setLoading(false);
         }
@@ -92,79 +133,104 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
 
                 <View style={styles.form}>
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>FULL NAME</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Full Name"
-                            placeholderTextColor={theme.colors.textMuted + '66'}
+                        <FormField
+                            label="FULL NAME"
                             value={fullName}
                             onChangeText={setFullName}
+                            placeholder="Full name"
+                            autoCapitalize="words"
+                            autoComplete="name"
+                            textContentType="name"
+                            touched={touched.fullName}
+                            error={errors.fullName}
+                            onBlur={() => setTouched(s => ({ ...s, fullName: true }))}
                         />
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>EMAIL ADDRESS</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Email Address"
-                            placeholderTextColor={theme.colors.textMuted + '66'}
+                        <FormField
+                            label="EMAIL ADDRESS"
                             value={email}
                             onChangeText={setEmail}
+                            placeholder="name@example.com"
                             keyboardType="email-address"
                             autoCapitalize="none"
+                            autoComplete="email"
+                            textContentType="emailAddress"
+                            touched={touched.email}
+                            error={errors.email}
+                            onBlur={() => setTouched(s => ({ ...s, email: true }))}
                         />
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>PASSWORD</Text>
-                        <View style={styles.passwordInputContainer}>
-                            <TextInput
-                                style={styles.passwordInput}
-                                placeholder="Password"
-                                placeholderTextColor={theme.colors.textMuted + '66'}
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry={!showPassword}
-                            />
-                            <TouchableOpacity
-                                onPress={() => setShowPassword(!showPassword)}
-                                style={styles.eyeIcon}>
-                                <Icon
-                                    name={showPassword ? 'visibility' : 'visibility-off'}
-                                    size={20}
-                                    color={theme.colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-                        </View>
+                        <FormField
+                            label="PASSWORD"
+                            value={password}
+                            onChangeText={setPassword}
+                            placeholder="8+ chars, upper, lower, number"
+                            secureTextEntry={!showPassword}
+                            autoComplete="password-new"
+                            textContentType="newPassword"
+                            touched={touched.password}
+                            error={errors.password}
+                            onBlur={() => setTouched(s => ({ ...s, password: true }))}
+                            rightIcon={{
+                                kind: 'button',
+                                icon: showPassword ? 'visibility' : 'visibility-off',
+                                accessibilityLabel: showPassword ? 'Hide password' : 'Show password',
+                                onPress: () => setShowPassword(v => !v),
+                            }}
+                        />
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>CONFIRM PASSWORD</Text>
-                        <View style={styles.passwordInputContainer}>
-                            <TextInput
-                                style={styles.passwordInput}
-                                placeholder="Confirm Password"
-                                placeholderTextColor={theme.colors.textMuted + '66'}
-                                value={confirmPassword}
-                                onChangeText={setConfirmPassword}
-                                secureTextEntry={!showConfirmPassword}
-                            />
-                            <TouchableOpacity
-                                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                                style={styles.eyeIcon}>
-                                <Icon
-                                    name={showConfirmPassword ? 'visibility' : 'visibility-off'}
-                                    size={20}
-                                    color={theme.colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-                        </View>
+                        <FormField
+                            label="CONFIRM PASSWORD"
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            placeholder="Repeat password"
+                            secureTextEntry={!showConfirmPassword}
+                            autoComplete="password-new"
+                            textContentType="newPassword"
+                            touched={touched.confirmPassword}
+                            error={errors.confirmPassword}
+                            onBlur={() => setTouched(s => ({ ...s, confirmPassword: true }))}
+                            rightIcon={{
+                                kind: 'button',
+                                icon: showConfirmPassword ? 'visibility' : 'visibility-off',
+                                accessibilityLabel: showConfirmPassword
+                                    ? 'Hide confirm password'
+                                    : 'Show confirm password',
+                                onPress: () => setShowConfirmPassword(v => !v),
+                            }}
+                        />
                     </View>
 
+                    {submitError ? (
+                        <TouchableOpacity
+                            activeOpacity={0.9}
+                            onPress={() =>
+                                setModal({
+                                    visible: true,
+                                    title: 'Could not create account',
+                                    message: submitError,
+                                    variant: 'error',
+                                })
+                            }
+                            style={styles.inlineError}>
+                            <Icon name="error-outline" size={18} color={theme.colors.error} />
+                            <Text style={styles.inlineErrorText} numberOfLines={2}>
+                                {submitError}
+                            </Text>
+                            <Text style={styles.inlineErrorCta}>Details</Text>
+                        </TouchableOpacity>
+                    ) : null}
+
                     <TouchableOpacity
-                        style={[styles.createButton, loading && { opacity: 0.7 }]}
+                        style={[styles.createButton, (!canSubmit || loading) && styles.createButtonDisabled]}
                         onPress={handleCreateAccount}
-                        disabled={loading}>
+                        disabled={!canSubmit || loading}>
                         {loading ? (
                             <ActivityIndicator color={theme.colors.white} />
                         ) : (
@@ -204,6 +270,13 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
                     </Text>
                 </View>
             </ScrollView>
+            <ModalMessage
+                visible={modal.visible}
+                variant={modal.variant}
+                title={modal.title}
+                message={modal.message}
+                onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+            />
         </KeyboardAvoidingView>
     );
 };
@@ -258,44 +331,31 @@ const styles = StyleSheet.create({
     inputGroup: {
         marginBottom: theme.spacing.lg,
     },
-    label: {
-        fontSize: 12,
-        fontFamily: theme.fonts.body,
-        color: theme.colors.textPrimary,
-        marginBottom: theme.spacing.xs,
-        fontWeight: '600',
-        letterSpacing: 0.5,
-        marginLeft: 4,
-    },
-    input: {
-        backgroundColor: 'transparent',
-        borderRadius: theme.borderRadius.md,
-        padding: theme.spacing.md,
-        fontSize: 16,
-        fontFamily: theme.fonts.body,
-        color: theme.colors.textPrimary,
-        borderWidth: 1,
-        borderColor: theme.colors.borderSubtle,
-        height: 56,
-    },
-    passwordInputContainer: {
+    inlineError: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'transparent',
+        gap: theme.spacing.sm,
+        marginTop: -theme.spacing.sm,
+        marginBottom: theme.spacing.sm,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
         borderRadius: theme.borderRadius.md,
         borderWidth: 1,
-        borderColor: theme.colors.borderSubtle,
-        height: 56,
+        borderColor: theme.colors.error + '33',
+        backgroundColor: theme.colors.error + '0D',
     },
-    passwordInput: {
+    inlineErrorText: {
         flex: 1,
-        padding: theme.spacing.md,
-        fontSize: 16,
+        fontSize: 13,
         fontFamily: theme.fonts.body,
         color: theme.colors.textPrimary,
+        lineHeight: 18,
     },
-    eyeIcon: {
-        padding: theme.spacing.md,
+    inlineErrorCta: {
+        fontSize: 12,
+        fontFamily: theme.fonts.body,
+        color: theme.colors.primary,
+        fontWeight: '700',
     },
     createButton: {
         backgroundColor: theme.colors.primary,
@@ -314,6 +374,9 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontFamily: theme.fonts.button,
         fontWeight: '600',
+    },
+    createButtonDisabled: {
+        opacity: 0.55,
     },
     signInLink: {
         alignItems: 'center',

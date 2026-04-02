@@ -1,20 +1,19 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
 import { userAPI } from '../services/api';
 import { validatePassword, validateOtp } from '../utils/validation';
+import { FormField } from '../components/FormField';
+import { ModalMessage } from '../components/ModalMessage';
 
 interface Props {
   navigation: { goBack: () => void };
@@ -32,29 +31,59 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
+  const [touched, setTouched] = useState({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+    otp: false,
+  });
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    variant: 'info' | 'success' | 'error';
+    title: string;
+    message: string;
+    primaryText?: string;
+  }>({
+    visible: false,
+    variant: 'info',
+    title: '',
+    message: '',
+    primaryText: 'OK',
+  });
+
+  const errors = useMemo(() => {
+    const currErr = !currentPassword ? 'Enter your current password.' : null;
+    const newErr = validatePassword(newPassword);
+    const confErr = !confirmPassword
+      ? 'Please confirm your new password.'
+      : newPassword !== confirmPassword
+        ? 'New password and confirmation do not match.'
+        : null;
+    const otpErr = validateOtp(otp);
+    return { currentPassword: currErr, newPassword: newErr, confirmPassword: confErr, otp: otpErr };
+  }, [confirmPassword, currentPassword, newPassword, otp]);
 
   const sendOtp = async () => {
-    const c = validatePassword(newPassword);
-    if (c) {
-      Alert.alert('New password', c);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Mismatch', 'New password and confirmation do not match.');
-      return;
-    }
-    if (!currentPassword) {
-      Alert.alert('Required', 'Enter your current password.');
-      return;
-    }
+    setTouched(s => ({ ...s, currentPassword: true, newPassword: true, confirmPassword: true }));
+    if (errors.currentPassword || errors.newPassword || errors.confirmPassword) return;
     setOtpLoading(true);
     try {
       const { data } = await userAPI.requestPasswordChangeOtp();
       if (data?.success) {
         setStep('otp');
-        Alert.alert('Code sent', 'Check your email. In dev, see server logs.');
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Code sent',
+          message: 'Check your email. In development, the code is also printed in server logs.',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Could not send code.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Could not send code',
+          message: data?.error?.message || 'Could not send code.',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -62,18 +91,20 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Could not send code.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Could not send code',
+        message: msg,
+      });
     } finally {
       setOtpLoading(false);
     }
   };
 
   const submit = async () => {
-    const o = validateOtp(otp);
-    if (o) {
-      Alert.alert('Code', o);
-      return;
-    }
+    setTouched(s => ({ ...s, otp: true }));
+    if (errors.otp) return;
     setLoading(true);
     try {
       const { data } = await userAPI.updatePassword({
@@ -82,11 +113,20 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
         otp: otp.replace(/\s/g, ''),
       });
       if (data?.success) {
-        Alert.alert('Done', 'Your password was updated.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Done',
+          message: 'Your password was updated.',
+          primaryText: 'OK',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Update failed.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Update failed',
+          message: data?.error?.message || 'Update failed.',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -94,7 +134,12 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Update failed.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Update failed',
+        message: msg,
+      });
     } finally {
       setLoading(false);
     }
@@ -115,52 +160,55 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
 
         {step === 'passwords' && (
           <>
-            <Text style={styles.label}>CURRENT PASSWORD</Text>
-            <View style={styles.pwRow}>
-              <TextInput
-                style={styles.pwInput}
-                placeholder="Current password"
-                placeholderTextColor={theme.colors.textMuted + '66'}
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                secureTextEntry={!showCurrent}
-              />
-              <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)} style={styles.eye}>
-                <Icon
-                  name={showCurrent ? 'visibility' : 'visibility-off'}
-                  size={20}
-                  color={theme.colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
+            <FormField
+              label="CURRENT PASSWORD"
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Current password"
+              secureTextEntry={!showCurrent}
+              autoComplete="password"
+              textContentType="password"
+              touched={touched.currentPassword}
+              error={errors.currentPassword}
+              onBlur={() => setTouched(s => ({ ...s, currentPassword: true }))}
+              rightIcon={{
+                kind: 'button',
+                icon: showCurrent ? 'visibility' : 'visibility-off',
+                accessibilityLabel: showCurrent ? 'Hide password' : 'Show password',
+                onPress: () => setShowCurrent(v => !v),
+              }}
+            />
 
-            <Text style={styles.label}>NEW PASSWORD</Text>
-            <View style={styles.pwRow}>
-              <TextInput
-                style={styles.pwInput}
-                placeholder="8+ chars, upper, lower, number"
-                placeholderTextColor={theme.colors.textMuted + '66'}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry={!showNew}
-              />
-              <TouchableOpacity onPress={() => setShowNew(!showNew)} style={styles.eye}>
-                <Icon
-                  name={showNew ? 'visibility' : 'visibility-off'}
-                  size={20}
-                  color={theme.colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
+            <FormField
+              label="NEW PASSWORD"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="8+ chars, upper, lower, number"
+              secureTextEntry={!showNew}
+              autoComplete="password-new"
+              textContentType="newPassword"
+              touched={touched.newPassword}
+              error={errors.newPassword}
+              onBlur={() => setTouched(s => ({ ...s, newPassword: true }))}
+              rightIcon={{
+                kind: 'button',
+                icon: showNew ? 'visibility' : 'visibility-off',
+                accessibilityLabel: showNew ? 'Hide password' : 'Show password',
+                onPress: () => setShowNew(v => !v),
+              }}
+            />
 
-            <Text style={styles.label}>CONFIRM NEW PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Repeat new password"
-              placeholderTextColor={theme.colors.textMuted + '66'}
+            <FormField
+              label="CONFIRM NEW PASSWORD"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
+              placeholder="Repeat new password"
               secureTextEntry={!showNew}
+              autoComplete="password-new"
+              textContentType="newPassword"
+              touched={touched.confirmPassword}
+              error={errors.confirmPassword}
+              onBlur={() => setTouched(s => ({ ...s, confirmPassword: true }))}
             />
 
             <TouchableOpacity
@@ -178,14 +226,17 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
 
         {step === 'otp' && (
           <>
-            <Text style={styles.label}>EMAIL CODE</Text>
-            <TextInput
-              style={styles.otp}
-              placeholder="000000"
-              placeholderTextColor={theme.colors.textMuted + '66'}
+            <FormField
+              label="EMAIL CODE"
               value={otp}
               onChangeText={t => setOtp(t.replace(/[^\d\s]/g, ''))}
+              placeholder="000000"
               keyboardType="number-pad"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              touched={touched.otp}
+              error={errors.otp}
+              onBlur={() => setTouched(s => ({ ...s, otp: true }))}
               maxLength={8}
             />
 
@@ -208,6 +259,15 @@ const ChangePasswordScreen = ({ navigation }: Props) => {
           </>
         )}
       </ScrollView>
+      <ModalMessage
+        visible={modal.visible}
+        variant={modal.variant}
+        title={modal.title}
+        message={modal.message}
+        primaryText={modal.primaryText ?? 'OK'}
+        onPrimary={modal.variant === 'success' && modal.title === 'Done' ? () => navigation.goBack() : undefined}
+        onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -227,61 +287,6 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     lineHeight: 21,
     marginBottom: theme.spacing.lg,
-  },
-  label: {
-    fontSize: 12,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    marginLeft: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    fontSize: 16,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textPrimary,
-    backgroundColor: theme.colors.white,
-    marginBottom: theme.spacing.md,
-    height: 52,
-  },
-  pwRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.white,
-    marginBottom: theme.spacing.md,
-    height: 52,
-  },
-  pwInput: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.md,
-    fontSize: 16,
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textPrimary,
-  },
-  eye: {
-    padding: theme.spacing.md,
-  },
-  otp: {
-    borderWidth: 1,
-    borderColor: theme.colors.borderSubtle,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    fontSize: 22,
-    letterSpacing: 6,
-    textAlign: 'center',
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textPrimary,
-    backgroundColor: theme.colors.white,
-    marginBottom: theme.spacing.lg,
-    height: 56,
   },
   primary: {
     backgroundColor: theme.colors.primary,

@@ -162,6 +162,10 @@ export const userAPI = {
     api.post('/users/security/two-factor/enable', data),
   disableTwoFactor: (data: {password: string}) =>
     api.post('/users/security/two-factor/disable', data),
+  requestPasswordResetOtp: (data: { email: string }) =>
+    api.post('/users/password/reset/otp', data),
+  resetPasswordWithOtp: (data: { email: string; otp: string; newPassword: string }) =>
+    api.post('/users/password/reset', data),
 };
 
 export const aiAPI = {

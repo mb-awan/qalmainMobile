@@ -8,7 +8,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -16,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme/colors';
 import { userAPI } from '../services/api';
 import { validateOtp } from '../utils/validation';
+import { ModalMessage } from '../components/ModalMessage';
 
 interface Props {
   navigation: { goBack: () => void };
@@ -30,6 +30,17 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<'idle' | 'awaitOtp'>('idle');
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    variant: 'info' | 'success' | 'error';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    variant: 'info',
+    title: '',
+    message: '',
+  });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -55,10 +66,12 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
 
   const sendEnableOtp = async () => {
     if (!emailVerified) {
-      Alert.alert(
-        'Verify email first',
-        'Complete email verification before turning on two-step verification.'
-      );
+      setModal({
+        visible: true,
+        variant: 'info',
+        title: 'Verify email first',
+        message: 'Complete email verification before turning on two-step verification.',
+      });
       return;
     }
     setBusy(true);
@@ -66,9 +79,19 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
       const { data } = await userAPI.requestTwoFactorEnableOtp();
       if (data?.success) {
         setMode('awaitOtp');
-        Alert.alert('Code sent', 'Check your email or server logs in development.');
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Code sent',
+          message: 'Check your email. In development, the code is also printed in server logs.',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Could not send code.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Could not send code',
+          message: data?.error?.message || 'Could not send code.',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -76,7 +99,12 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Could not send code.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Could not send code',
+        message: msg,
+      });
     } finally {
       setBusy(false);
     }
@@ -85,7 +113,7 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
   const confirmEnable = async () => {
     const err = validateOtp(otp);
     if (err) {
-      Alert.alert('Code', err);
+      setModal({ visible: true, variant: 'error', title: 'Code', message: err });
       return;
     }
     setBusy(true);
@@ -97,9 +125,19 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
         setEnabled(true);
         setMode('idle');
         setOtp('');
-        Alert.alert('Enabled', 'Two-step verification is on.');
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Enabled',
+          message: 'Two-step verification is on.',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Could not enable.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Could not enable',
+          message: data?.error?.message || 'Could not enable.',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -107,7 +145,12 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Could not enable.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Could not enable',
+        message: msg,
+      });
     } finally {
       setBusy(false);
     }
@@ -115,7 +158,12 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
 
   const disable = async () => {
     if (!password.trim()) {
-      Alert.alert('Password required', 'Enter your password to turn this off.');
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Password required',
+        message: 'Enter your password to turn this off.',
+      });
       return;
     }
     setBusy(true);
@@ -124,9 +172,19 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
       if (data?.success) {
         setEnabled(false);
         setPassword('');
-        Alert.alert('Disabled', 'Two-step verification is off.');
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Disabled',
+          message: 'Two-step verification is off.',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Could not disable.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Could not disable',
+          message: data?.error?.message || 'Could not disable.',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -134,7 +192,12 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Could not disable.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Could not disable',
+        message: msg,
+      });
     } finally {
       setBusy(false);
     }
@@ -230,6 +293,13 @@ const TwoFactorSecurityScreen = ({ }: Props) => {
           </>
         )}
       </ScrollView>
+      <ModalMessage
+        visible={modal.visible}
+        variant={modal.variant}
+        title={modal.title}
+        message={modal.message}
+        onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+      />
     </KeyboardAvoidingView>
   );
 };

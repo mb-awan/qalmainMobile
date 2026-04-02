@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
 import { userAPI, clearAuthToken } from '../services/api';
 import { validateOtp } from '../utils/validation';
+import { ModalMessage } from '../components/ModalMessage';
 
 const RESEND_SECONDS = 60;
 
@@ -31,6 +31,23 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [touched, setTouched] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [modal, setModal] = useState<{
+    visible: boolean;
+    variant: 'info' | 'success' | 'error';
+    title: string;
+    message: string;
+    primaryText?: string;
+  }>({
+    visible: false,
+    variant: 'info',
+    title: '',
+    message: '',
+    primaryText: 'OK',
+  });
+
+  const otpError = useMemo(() => validateOtp(otp), [otp]);
 
   const tickCooldown = useCallback(() => {
     setCooldown(RESEND_SECONDS);
@@ -45,11 +62,9 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
   }, [cooldown]);
 
   const handleVerify = async () => {
-    const err = validateOtp(otp);
-    if (err) {
-      Alert.alert('Check code', err);
-      return;
-    }
+    setTouched(true);
+    setSubmitError(null);
+    if (otpError) return;
     setLoading(true);
     try {
       const { data } = await userAPI.verifyEmail({
@@ -61,7 +76,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
           routes: [{ name: 'MainTabs' }],
         });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Verification failed.');
+        setSubmitError(data?.error?.message || 'Verification failed.');
       }
     } catch (e: unknown) {
       const msg =
@@ -69,7 +84,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Verification failed.';
-      Alert.alert('Error', msg);
+      setSubmitError(msg);
     } finally {
       setLoading(false);
     }
@@ -82,9 +97,21 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
       const { data } = await userAPI.resendEmailVerification();
       if (data?.success) {
         tickCooldown();
-        Alert.alert('Sent', 'We sent a new code to your email.');
+        setModal({
+          visible: true,
+          variant: 'success',
+          title: 'Code sent',
+          message: 'We sent a new code to your email.',
+          primaryText: 'OK',
+        });
       } else {
-        Alert.alert('Error', data?.error?.message || 'Could not resend.');
+        setModal({
+          visible: true,
+          variant: 'error',
+          title: 'Could not resend',
+          message: data?.error?.message || 'Could not resend.',
+          primaryText: 'OK',
+        });
       }
     } catch (e: unknown) {
       const msg =
@@ -92,27 +119,26 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
           ?.response?.data?.error?.message ||
         (e as Error)?.message ||
         'Could not resend.';
-      Alert.alert('Error', msg);
+      setModal({
+        visible: true,
+        variant: 'error',
+        title: 'Could not resend',
+        message: msg,
+        primaryText: 'OK',
+      });
     } finally {
       setResendLoading(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign out?', 'You can verify your email later.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          await clearAuthToken();
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'SignIn' }],
-          });
-        },
-      },
-    ]);
+    setModal({
+      visible: true,
+      variant: 'info',
+      title: 'Sign out?',
+      message: 'You can verify your email later.',
+      primaryText: 'Sign out',
+    });
   };
 
   return (
@@ -142,16 +168,23 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
             value={otp}
             onChangeText={t => setOtp(t.replace(/[^\d\s]/g, ''))}
             onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onBlur={() => {
+              setFocused(false);
+              setTouched(true);
+            }}
             keyboardType="number-pad"
             maxLength={8}
             autoComplete="one-time-code"
+            includeFontPadding={false}
+            textAlignVertical="center"
           />
+          {touched && otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
+          {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
 
           <TouchableOpacity
             style={[styles.primaryBtn, loading && styles.btnDisabled]}
             onPress={handleVerify}
-            disabled={loading}>
+            disabled={loading || Boolean(otpError)}>
             {loading ? (
               <ActivityIndicator color={theme.colors.white} />
             ) : (
@@ -183,6 +216,27 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <ModalMessage
+        visible={modal.visible}
+        variant={modal.variant}
+        title={modal.title}
+        message={modal.message}
+        primaryText={modal.primaryText}
+        secondaryText={modal.title === 'Sign out?' ? 'Cancel' : undefined}
+        onSecondary={() => {}}
+        onPrimary={
+          modal.title === 'Sign out?'
+            ? async () => {
+                await clearAuthToken();
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'SignIn' }],
+                });
+              }
+            : undefined
+        }
+        onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -261,6 +315,14 @@ const styles = StyleSheet.create({
   },
   inputFocused: {
     borderColor: theme.colors.primary,
+  },
+  errorText: {
+    marginTop: 8,
+    marginLeft: 4,
+    fontSize: 12,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.error,
+    lineHeight: 16,
   },
   primaryBtn: {
     backgroundColor: theme.colors.primary,
