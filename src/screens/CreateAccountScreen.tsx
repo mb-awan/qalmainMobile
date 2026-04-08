@@ -8,6 +8,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
+    Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
@@ -74,6 +75,15 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
         );
     }, [errors, loading]);
 
+    const showSocialUnavailable = (provider: 'Google' | 'Apple') => {
+        setModal({
+            visible: true,
+            title: `${provider} sign in`,
+            message: `${provider} login is not available at the moment. Please use email and password.`,
+            variant: 'info',
+        });
+    };
+
     const handleCreateAccount = async () => {
         setTouched({
             fullName: true,
@@ -124,7 +134,11 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
                 <View style={styles.header}>
                     <View style={styles.logoContainer}>
                         <View style={styles.logo}>
-                            <Icon name="nights-stay" size={40} color={theme.colors.primary} />
+                            <Image
+                                source={require('../assets/images/qalmain-logo.png')}
+                                style={styles.logoImage}
+                                resizeMode="contain"
+                            />
                         </View>
                     </View>
                     <Text style={styles.appTitle}>Digital Qari</Text>
@@ -253,10 +267,14 @@ const CreateAccountScreen = ({ navigation }: CreateAccountScreenProps) => {
                     </View>
 
                     <View style={styles.socialButtonsRow}>
-                        <TouchableOpacity style={styles.socialButtonSquare}>
+                        <TouchableOpacity
+                            style={styles.socialButtonSquare}
+                            onPress={() => showSocialUnavailable('Google')}>
                             <Icon name="g-translate" size={24} color={theme.colors.textPrimary} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.socialButtonSquare}>
+                        <TouchableOpacity
+                            style={styles.socialButtonSquare}
+                            onPress={() => showSocialUnavailable('Apple')}>
                             <Icon name="apple" size={24} color={theme.colors.textPrimary} />
                         </TouchableOpacity>
                     </View>
@@ -299,8 +317,8 @@ const styles = StyleSheet.create({
         marginBottom: theme.spacing.md,
     },
     logo: {
-        width: 64,
-        height: 64,
+        width: 76,
+        height: 76,
         borderRadius: 16,
         backgroundColor: theme.colors.white,
         justifyContent: 'center',
@@ -312,6 +330,10 @@ const styles = StyleSheet.create({
         elevation: 2,
         borderWidth: 1,
         borderColor: theme.colors.borderSubtle,
+    },
+    logoImage: {
+        width: 56,
+        height: 56,
     },
     appTitle: {
         fontSize: 30,

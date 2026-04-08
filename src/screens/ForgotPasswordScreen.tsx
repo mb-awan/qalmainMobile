@@ -64,7 +64,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
           </View>
           <Text style={styles.title}>Forgot password?</Text>
           <Text style={styles.subtitle}>
-            Enter your email and we’ll send a 6-digit code to reset your password.
+            Enter your email and we'll send a 6-digit code to reset your password.
           </Text>
         </View>
 

@@ -5,6 +5,7 @@ import {
     StyleSheet,
     TouchableOpacity,
     Dimensions,
+    Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -62,6 +63,11 @@ const OnboardingScreen = ({ navigation }: OnboardingScreenProps) => {
             </TouchableOpacity>
 
             <View style={styles.content}>
+                <Image
+                    source={require('../assets/images/qalmain-logo.png')}
+                    style={styles.brandLogo}
+                    resizeMode="contain"
+                />
                 <View style={styles.iconContainer}>
                     {currentIndex === 2 ? (
                         <View style={styles.bookIconContainer}>
@@ -147,6 +153,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: theme.spacing.xl,
+    },
+    brandLogo: {
+        width: 96,
+        height: 96,
+        marginBottom: theme.spacing.lg,
     },
     iconContainer: {
         marginBottom: theme.spacing.xl,

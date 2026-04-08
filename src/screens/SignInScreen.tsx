@@ -8,6 +8,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
+    Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
@@ -52,6 +53,15 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
     const canSubmit = useMemo(() => {
         return !loading && !errors.email && !errors.password;
     }, [errors.email, errors.password, loading]);
+
+    const showSocialUnavailable = (provider: 'Google' | 'Apple') => {
+        setModal({
+            visible: true,
+            title: `${provider} sign in`,
+            message: `${provider} login is not available at the moment. Please use email and password.`,
+            variant: 'info',
+        });
+    };
 
     const handleSignIn = async () => {
         setTouched({ email: true, password: true });
@@ -110,7 +120,11 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                 keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
                     <View style={styles.logoContainer}>
-                        <Icon name="nights-stay" size={48} color={theme.colors.primary} />
+                        <Image
+                            source={require('../assets/images/qalmain-logo.png')}
+                            style={styles.logo}
+                            resizeMode="contain"
+                        />
                     </View>
                     <Text style={styles.appTitle}>Digital Qari</Text>
                     <Text style={styles.tagline}>Learn the Quran with focus and guidance</Text>
@@ -208,12 +222,16 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                         <View style={styles.dividerLine} />
                     </View>
 
-                    <TouchableOpacity style={styles.socialButton}>
+                    <TouchableOpacity
+                        style={styles.socialButton}
+                        onPress={() => showSocialUnavailable('Google')}>
                         <Icon name="g-translate" size={20} color={theme.colors.textPrimary} />
                         <Text style={styles.socialButtonText}>Continue with Google</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.socialButton, styles.appleButton]}>
+                    <TouchableOpacity
+                        style={[styles.socialButton, styles.appleButton]}
+                        onPress={() => showSocialUnavailable('Apple')}>
                         <Icon name="apple" size={20} color={theme.colors.white} />
                         <Text style={[styles.socialButtonText, styles.appleButtonText]}>
                             Continue with Apple
@@ -258,6 +276,10 @@ const styles = StyleSheet.create({
     },
     logoContainer: {
         marginBottom: theme.spacing.md,
+    },
+    logo: {
+        width: 104,
+        height: 104,
     },
     appTitle: {
         fontSize: 30,

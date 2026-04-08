@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme/colors';
+import { userAPI } from '../services/api';
 
 const HomeScreen = ({ navigation }: any) => {
   const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; timeRemaining: string } | null>(null);
+  const [userName, setUserName] = useState('Learner');
 
   useEffect(() => {
     loadNextPrayer();
@@ -20,6 +23,24 @@ const HomeScreen = ({ navigation }: any) => {
 
     return () => clearInterval(interval);
   }, []);
+
+  const loadUserProfile = useCallback(async () => {
+    try {
+      const { data } = await userAPI.getProfile();
+      const u = data?.data?.user;
+      if (u?.name) {
+        setUserName(String(u.name));
+      }
+    } catch {
+      setUserName('Learner');
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserProfile().catch(() => {});
+    }, [loadUserProfile]),
+  );
 
   const loadNextPrayer = async () => {
     try {
@@ -67,7 +88,7 @@ const HomeScreen = ({ navigation }: any) => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.greeting}>Assalamu Alaikum</Text>
-          <Text style={styles.userName}>Ahmed</Text>
+          <Text style={styles.userName}>{userName}</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
