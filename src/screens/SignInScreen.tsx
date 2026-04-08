@@ -8,7 +8,6 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
-    Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme/colors';
@@ -16,6 +15,9 @@ import { userAPI, setAuthToken } from '../services/api';
 import { validateEmail } from '../utils/validation';
 import { FormField } from '../components/FormField';
 import { ModalMessage } from '../components/ModalMessage';
+import { AuthBrandHeader } from '../components/AuthBrandHeader';
+import { AuthSocialSection } from '../components/AuthSocialSection';
+import { LegalDocumentModal } from '../components/LegalDocumentModal';
 
 interface SignInScreenProps {
     navigation: any;
@@ -32,6 +34,7 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
         password: false,
     });
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [legalModalType, setLegalModalType] = useState<'privacy' | 'terms' | null>(null);
     const [modal, setModal] = useState<{
         visible: boolean;
         title: string;
@@ -118,17 +121,7 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled">
-                <View style={styles.header}>
-                    <View style={styles.logoContainer}>
-                        <Image
-                            source={require('../assets/images/qalmain-logo.png')}
-                            style={styles.logo}
-                            resizeMode="contain"
-                        />
-                    </View>
-                    <Text style={styles.appTitle}>Digital Qari</Text>
-                    <Text style={styles.tagline}>Learn the Quran with focus and guidance</Text>
-                </View>
+                <AuthBrandHeader subtitle="Learn the Quran with focus and guidance" />
 
                 <View style={styles.form}>
                     <View style={styles.inputGroup}>
@@ -216,35 +209,18 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                         </Text>
                     </TouchableOpacity>
 
-                    <View style={styles.divider}>
-                        <View style={styles.dividerLine} />
-                        <Text style={styles.dividerText}>OR</Text>
-                        <View style={styles.dividerLine} />
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.socialButton}
-                        onPress={() => showSocialUnavailable('Google')}>
-                        <Icon name="g-translate" size={20} color={theme.colors.textPrimary} />
-                        <Text style={styles.socialButtonText}>Continue with Google</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.socialButton, styles.appleButton]}
-                        onPress={() => showSocialUnavailable('Apple')}>
-                        <Icon name="apple" size={20} color={theme.colors.white} />
-                        <Text style={[styles.socialButtonText, styles.appleButtonText]}>
-                            Continue with Apple
-                        </Text>
-                    </TouchableOpacity>
+                    <AuthSocialSection
+                        onGooglePress={() => showSocialUnavailable('Google')}
+                        onApplePress={() => showSocialUnavailable('Apple')}
+                    />
                 </View>
 
                 <View style={styles.footer}>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => setLegalModalType('privacy')}>
                         <Text style={styles.footerLink}>Privacy Policy</Text>
                     </TouchableOpacity>
                     <Text style={styles.footerSeparator}> • </Text>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => setLegalModalType('terms')}>
                         <Text style={styles.footerLink}>Terms of Use</Text>
                     </TouchableOpacity>
                 </View>
@@ -255,6 +231,11 @@ const SignInScreen = ({ navigation }: SignInScreenProps) => {
                 title={modal.title}
                 message={modal.message}
                 onDismiss={() => setModal(s => ({ ...s, visible: false }))}
+            />
+            <LegalDocumentModal
+                visible={!!legalModalType}
+                type={legalModalType || 'privacy'}
+                onClose={() => setLegalModalType(null)}
             />
         </KeyboardAvoidingView>
     );
@@ -268,33 +249,6 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingBottom: theme.spacing.xl,
-    },
-    header: {
-        alignItems: 'center',
-        paddingTop: theme.spacing.xxl * 1.25,
-        paddingBottom: theme.spacing.xl,
-    },
-    logoContainer: {
-        marginBottom: theme.spacing.md,
-    },
-    logo: {
-        width: 104,
-        height: 104,
-    },
-    appTitle: {
-        fontSize: 30,
-        fontFamily: theme.fonts.heading,
-        color: theme.colors.textPrimary,
-        fontWeight: '600',
-        marginBottom: theme.spacing.xs,
-    },
-    tagline: {
-        fontSize: 15,
-        fontFamily: theme.fonts.body,
-        color: theme.colors.textMuted,
-        textAlign: 'center',
-        maxWidth: 240,
-        lineHeight: 22,
     },
     form: {
         paddingHorizontal: theme.spacing.xl,
@@ -382,49 +336,6 @@ const styles = StyleSheet.create({
     createAccountLinkText: {
         color: theme.colors.primary,
         fontWeight: '600',
-    },
-    divider: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: theme.spacing.lg,
-    },
-    dividerLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: theme.colors.borderSubtle,
-    },
-    dividerText: {
-        marginHorizontal: theme.spacing.md,
-        fontSize: 11,
-        fontFamily: theme.fonts.body,
-        color: theme.colors.textSecondary,
-        fontWeight: '700',
-        letterSpacing: 3.2,
-    },
-    socialButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: theme.colors.white,
-        paddingVertical: theme.spacing.md,
-        borderRadius: theme.borderRadius.round,
-        borderWidth: 1,
-        borderColor: theme.colors.borderSubtle,
-        marginBottom: theme.spacing.md,
-        gap: theme.spacing.sm,
-    },
-    socialButtonText: {
-        fontSize: 14,
-        fontFamily: theme.fonts.body,
-        color: theme.colors.textPrimary,
-        fontWeight: '500',
-    },
-    appleButton: {
-        backgroundColor: theme.colors.black,
-        borderColor: theme.colors.black,
-    },
-    appleButtonText: {
-        color: theme.colors.white,
     },
     footer: {
         flexDirection: 'row',
