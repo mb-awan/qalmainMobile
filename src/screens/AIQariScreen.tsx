@@ -7,9 +7,11 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Camera, useCameraDevice} from 'react-native-vision-camera';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {theme} from '../theme/colors';
+import {aiAPI} from '../services/api';
 
 const {height: SCREEN_HEIGHT} = Dimensions.get('window');
 const CAMERA_HEIGHT = SCREEN_HEIGHT * 0.3;
@@ -38,6 +40,35 @@ const AIQariScreen = ({navigation}: AIQariScreenProps) => {
       return () => clearInterval(interval);
     }
   }, [isActive, isPaused]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token || cancelled) {
+        return;
+      }
+      try {
+        await aiAPI.startSession();
+      } catch {
+        /* AI server optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void (async () => {
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) {
+          return;
+        }
+        try {
+          await aiAPI.stopSession();
+        } catch {
+          /* ignore */
+        }
+      })();
+    };
+  }, []);
 
   const handleClose = () => {
     navigation.goBack();

@@ -1,71 +1,149 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useFocusEffect} from '@react-navigation/native';
 import {theme} from '../theme/colors';
+import {bookmarkAPI} from '../services/api';
+import {fetchAyahArabic, fetchAyahByGlobalNumber} from '../services/quranApi';
+
+type BookmarkRow = {
+  key: string;
+  surah: number;
+  ayah: number;
+  text: string;
+  /** Set when data came from API (Mongo id) */
+  serverId?: string;
+};
+
+const LOCAL_KEY = 'bookmarkedAyahs';
 
 const BookmarksScreen = ({navigation}: any) => {
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [bookmarks, setBookmarks] = useState<BookmarkRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadBookmarks();
-  }, []);
-
-  const loadBookmarks = async () => {
+  const loadBookmarks = useCallback(async () => {
+    setLoading(true);
     try {
-      const bookmarkedAyahs = await AsyncStorage.getItem('bookmarkedAyahs');
-      if (bookmarkedAyahs) {
-        const ayahIds = JSON.parse(bookmarkedAyahs);
-        // In production, fetch full ayah details from API
-        const bookmarkList = ayahIds.map((id: number) => ({
-          id,
-          para: Math.ceil(id / 20),
-          ayah: id,
-          text: 'بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ',
-        }));
-        setBookmarks(bookmarkList);
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        try {
+          const {data} = await bookmarkAPI.getAll();
+          const raw = data?.data?.bookmarks ?? [];
+          const rows: BookmarkRow[] = [];
+          for (const b of raw as {
+            id: string;
+            surah: number;
+            ayah: number;
+          }[]) {
+            const text = await fetchAyahArabic(b.surah, b.ayah).catch(
+              () => '…',
+            );
+            rows.push({
+              key: b.id,
+              surah: b.surah,
+              ayah: b.ayah,
+              text,
+              serverId: b.id,
+            });
+          }
+          setBookmarks(rows);
+          return;
+        } catch {
+          /* fall through to local */
+        }
       }
+
+      const bookmarkedAyahs = await AsyncStorage.getItem(LOCAL_KEY);
+      if (!bookmarkedAyahs) {
+        setBookmarks([]);
+        return;
+      }
+      const ayahIds: number[] = JSON.parse(bookmarkedAyahs);
+      const rows: BookmarkRow[] = [];
+      for (const globalNum of ayahIds) {
+        try {
+          const {text, surah, numberInSurah} =
+            await fetchAyahByGlobalNumber(globalNum);
+          rows.push({
+            key: `local-${globalNum}`,
+            surah,
+            ayah: numberInSurah,
+            text,
+          });
+        } catch {
+          rows.push({
+            key: `local-${globalNum}`,
+            surah: 1,
+            ayah: globalNum,
+            text: '…',
+          });
+        }
+      }
+      setBookmarks(rows);
     } catch (error) {
       console.error('Error loading bookmarks:', error);
+      setBookmarks([]);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const removeBookmark = async (ayahId: number) => {
+  useFocusEffect(
+    useCallback(() => {
+      void loadBookmarks();
+    }, [loadBookmarks]),
+  );
+
+  const removeBookmark = async (item: BookmarkRow) => {
     try {
-      const bookmarkedAyahs = await AsyncStorage.getItem('bookmarkedAyahs');
+      if (item.serverId) {
+        await bookmarkAPI.remove(item.serverId);
+        await loadBookmarks();
+        return;
+      }
+      const bookmarkedAyahs = await AsyncStorage.getItem(LOCAL_KEY);
       if (bookmarkedAyahs) {
-        const ayahIds = JSON.parse(bookmarkedAyahs).filter(
-          (id: number) => id !== ayahId,
-        );
-        await AsyncStorage.setItem('bookmarkedAyahs', JSON.stringify(ayahIds));
-        loadBookmarks();
+        const globalIds: number[] = JSON.parse(bookmarkedAyahs);
+        const keyNum = parseInt(item.key.replace('local-', ''), 10);
+        const next = globalIds.filter(id => id !== keyNum);
+        await AsyncStorage.setItem(LOCAL_KEY, JSON.stringify(next));
+        await loadBookmarks();
       }
     } catch (error) {
       console.error('Error removing bookmark:', error);
     }
   };
 
-  const renderBookmarkItem = ({item}: {item: any}) => (
+  const renderBookmarkItem = ({item}: {item: BookmarkRow}) => (
     <View style={styles.bookmarkCard}>
       <View style={styles.bookmarkContent}>
-        <Text style={styles.paraText}>Para {item.para} – Ayah {item.ayah}</Text>
+        <Text style={styles.paraText}>
+          Surah {item.surah} · Ayah {item.ayah}
+        </Text>
         <Text style={styles.ayahText}>{item.text}</Text>
       </View>
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => navigation.navigate('Quran', {ayahId: item.id})}>
+          onPress={() =>
+            navigation.navigate('Quran', {
+              surahNumber: item.surah,
+              title: `Surah ${item.surah}`,
+            })
+          }>
           <Icon name="arrow-forward" size={20} color={theme.colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => removeBookmark(item.id)}>
+          onPress={() => removeBookmark(item)}>
           <Icon name="delete" size={20} color={theme.colors.error} />
         </TouchableOpacity>
       </View>
@@ -79,9 +157,17 @@ const BookmarksScreen = ({navigation}: any) => {
         <Text style={styles.headerTitle}>Your Bookmarks</Text>
       </View>
 
-      {bookmarks.length === 0 ? (
+      {loading ? (
         <View style={styles.emptyContainer}>
-          <Icon name="bookmark-border" size={64} color={theme.colors.textSecondary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      ) : bookmarks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Icon
+            name="bookmark-border"
+            size={64}
+            color={theme.colors.textSecondary}
+          />
           <Text style={styles.emptyText}>No bookmarks yet</Text>
           <Text style={styles.emptySubtext}>
             Bookmark ayahs while reading to see them here
@@ -91,7 +177,7 @@ const BookmarksScreen = ({navigation}: any) => {
         <FlatList
           data={bookmarks}
           renderItem={renderBookmarkItem}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={item => item.key}
           contentContainerStyle={styles.listContainer}
         />
       )}
@@ -179,5 +265,3 @@ const styles = StyleSheet.create({
 });
 
 export default BookmarksScreen;
-
-

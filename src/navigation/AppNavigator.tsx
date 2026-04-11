@@ -24,6 +24,12 @@ import AzanScreen from '../screens/AzanScreen';
 import QiblaScreen from '../screens/QiblaScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import AIQariScreen from '../screens/AIQariScreen';
+import QuranTutorScreen from '../screens/QuranTutorScreen';
+import DigitalQariIntroScreen from '../screens/DigitalQariIntroScreen';
+import DigitalQariFocusScreen from '../screens/DigitalQariFocusScreen';
+import DigitalQariSessionScreen from '../screens/DigitalQariSessionScreen';
+import DigitalQariStudyPathScreen from '../screens/DigitalQariStudyPathScreen';
+import DigitalQariPlanScreen from '../screens/DigitalQariPlanScreen';
 import IslamicLessonsScreen from '../screens/IslamicLessonsScreen';
 import ParaListScreen from '../screens/ParaListScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
@@ -266,6 +272,36 @@ export default function AppNavigator(): React.JSX.Element {
         <Stack.Screen
           name="AIQari"
           component={AIQariScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DigitalQariIntro"
+          component={DigitalQariIntroScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DigitalQariFocus"
+          component={DigitalQariFocusScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DigitalQariSession"
+          component={DigitalQariSessionScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DigitalQariStudyPath"
+          component={DigitalQariStudyPathScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DigitalQariPlan"
+          component={DigitalQariPlanScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="QuranTutor"
+          component={QuranTutorScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

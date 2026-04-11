@@ -78,3 +78,38 @@ export const fetchJuz = async (
     translation: translationRes.data.data as JuzContent,
   };
 };
+
+/** Global Mushaf ayah index (1–6236) for a surah:ayah reference. */
+export const fetchGlobalAyahNumber = async (
+  surah: number,
+  ayah: number,
+): Promise<number> => {
+  const res = await client.get(`/ayah/${surah}:${ayah}`);
+  return res.data.data.number as number;
+};
+
+/** Arabic text for one ayah (Uthmani). */
+export const fetchAyahArabic = async (
+  surah: number,
+  ayah: number,
+): Promise<string> => {
+  const res = await client.get(
+    `/ayah/${surah}:${ayah}/editions/quran-uthmani`,
+  );
+  return res.data.data[0].text as string;
+};
+
+/** Resolve a global ayah number to surah / in-surah index + Arabic (guest bookmarks). */
+export const fetchAyahByGlobalNumber = async (
+  globalNumber: number,
+): Promise<{ text: string; surah: number; numberInSurah: number }> => {
+  const res = await client.get(
+    `/ayah/${globalNumber}/editions/quran-uthmani`,
+  );
+  const row = res.data.data[0];
+  return {
+    text: row.text,
+    surah: row.surah.number,
+    numberInSurah: row.numberInSurah,
+  };
+};

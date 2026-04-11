@@ -6,12 +6,15 @@ import {
   Switch,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import {request, PERMISSIONS, RESULTS} from 'react-native-permissions';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {theme} from '../theme/colors';
+import {azanAPI} from '../services/api';
 
 interface PrayerTime {
   name: string;
@@ -22,34 +25,141 @@ interface PrayerTime {
 
 type CalculationMethod = 'hanafi' | 'shafi';
 
+const formatTime12 = (raw: string): string => {
+  const clean = raw.trim().split(/\s+/)[0];
+  const [hStr, mPart] = clean.split(':');
+  let h = parseInt(hStr, 10);
+  const m = (mPart || '00').slice(0, 2).padStart(2, '0');
+  if (Number.isNaN(h)) {
+    return raw;
+  }
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) {
+    h = 12;
+  }
+  return `${h}:${m} ${ampm}`;
+};
+
 const AzanScreen = () => {
   const [prayerTimes, setPrayerTimes] = useState<PrayerTime[]>([]);
   const [azanEnabled, setAzanEnabled] = useState(true);
   const [silentMode, setSilentMode] = useState(false);
-  const [location, setLocation] = useState<{lat: number; lng: number} | null>(null);
-  const [calculationMethod, setCalculationMethod] = useState<CalculationMethod>('hanafi');
+  const [location, setLocation] = useState<{lat: number; lng: number} | null>(
+    null,
+  );
+  const [calculationMethod, setCalculationMethod] =
+    useState<CalculationMethod>('hanafi');
+  const [timesLoading, setTimesLoading] = useState(false);
 
   useEffect(() => {
-    loadSettings();
-    requestLocationPermission();
+    void loadSettings();
+    void requestLocationPermission();
   }, []);
 
   useEffect(() => {
-    if (location) {
-      const times = calculatePrayerTimes(calculationMethod);
-      setPrayerTimes(times);
+    if (!location) {
+      return;
     }
+    let cancelled = false;
+    void (async () => {
+      setTimesLoading(true);
+      try {
+        const {data} = await azanAPI.getPrayerTimes(
+          location.lat,
+          location.lng,
+          undefined,
+          calculationMethod,
+        );
+        if (cancelled) {
+          return;
+        }
+        const t = data?.data?.times as
+          | {
+              fajr: string;
+              dhuhr: string;
+              asr: string;
+              maghrib: string;
+              isha: string;
+            }
+          | undefined;
+        if (!t) {
+          throw new Error('no times');
+        }
+        const list: PrayerTime[] = [
+          {name: 'Fajr', time: formatTime12(t.fajr), icon: '🌅'},
+          {name: 'Dhuhr', time: formatTime12(t.dhuhr), icon: '☀️'},
+          {
+            name: 'Asr',
+            time: formatTime12(t.asr),
+            icon: '🌤️',
+            isNext: true,
+          },
+          {name: 'Maghrib', time: formatTime12(t.maghrib), icon: '🌆'},
+          {name: 'Isha', time: formatTime12(t.isha), icon: '🌙'},
+        ];
+        setPrayerTimes(list);
+      } catch {
+        if (!cancelled) {
+          setPrayerTimes(calculatePrayerTimes(calculationMethod));
+        }
+      } finally {
+        if (!cancelled) {
+          setTimesLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [location, calculationMethod]);
 
   const loadSettings = async () => {
     try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        try {
+          const {data} = await azanAPI.getSettings();
+          const s = data?.data as
+            | {
+                enabled?: boolean;
+                silentMode?: boolean;
+                madhhab?: string;
+              }
+            | undefined;
+          if (s) {
+            setAzanEnabled(s.enabled !== false);
+            setSilentMode(s.silentMode === true);
+            if (s.madhhab === 'hanafi' || s.madhhab === 'shafi') {
+              setCalculationMethod(s.madhhab);
+              await AsyncStorage.setItem('prayerCalculationMethod', s.madhhab);
+            }
+            await AsyncStorage.setItem(
+              'azanEnabled',
+              String(s.enabled !== false),
+            );
+            await AsyncStorage.setItem(
+              'azanSilentMode',
+              String(s.silentMode === true),
+            );
+            return;
+          }
+        } catch {
+          /* use local */
+        }
+      }
+
       const method = await AsyncStorage.getItem('prayerCalculationMethod');
-      if (method) {
-        setCalculationMethod(method as CalculationMethod);
+      if (method === 'hanafi' || method === 'shafi') {
+        setCalculationMethod(method);
       }
       const enabled = await AsyncStorage.getItem('azanEnabled');
       if (enabled !== null) {
         setAzanEnabled(enabled === 'true');
+      }
+      const silent = await AsyncStorage.getItem('azanSilentMode');
+      if (silent !== null) {
+        setSilentMode(silent === 'true');
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -60,6 +170,10 @@ const AzanScreen = () => {
     try {
       await AsyncStorage.setItem('prayerCalculationMethod', method);
       setCalculationMethod(method);
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        await azanAPI.updateSettings({madhhab: method});
+      }
     } catch (error) {
       console.error('Error saving calculation method:', error);
     }
@@ -67,7 +181,11 @@ const AzanScreen = () => {
 
   const requestLocationPermission = async () => {
     try {
-      const result = await request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
+      const permission =
+        Platform.OS === 'ios'
+          ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+          : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+      const result = await request(permission);
       if (result === RESULTS.GRANTED) {
         Geolocation.getCurrentPosition(
           position => {
@@ -78,7 +196,7 @@ const AzanScreen = () => {
           },
           error => {
             console.error('Error getting location:', error);
-            setLocation({lat: 21.4225, lng: 39.8262}); // Default to Mecca
+            setLocation({lat: 21.4225, lng: 39.8262});
           },
         );
       } else {
@@ -90,9 +208,7 @@ const AzanScreen = () => {
     }
   };
 
-  const calculatePrayerTimes = (method: CalculationMethod) => {
-    // Simplified prayer time calculation
-    // In production, use a proper library like adhan-js
+  const calculatePrayerTimes = (method: CalculationMethod): PrayerTime[] => {
     const times: PrayerTime[] = [
       {name: 'Fajr', time: '05:30 AM', icon: '🌅'},
       {name: 'Dhuhr', time: '12:15 PM', icon: '☀️'},
@@ -108,6 +224,32 @@ const AzanScreen = () => {
     return times;
   };
 
+  const onAzanEnabledChange = async (v: boolean) => {
+    setAzanEnabled(v);
+    try {
+      await AsyncStorage.setItem('azanEnabled', String(v));
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        await azanAPI.updateSettings({enabled: v});
+      }
+    } catch (error) {
+      console.error('Error saving azan enabled:', error);
+    }
+  };
+
+  const onSilentModeChange = async (v: boolean) => {
+    setSilentMode(v);
+    try {
+      await AsyncStorage.setItem('azanSilentMode', String(v));
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        await azanAPI.updateSettings({silentMode: v});
+      }
+    } catch (error) {
+      console.error('Error saving silent mode:', error);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -119,7 +261,6 @@ const AzanScreen = () => {
         )}
       </View>
 
-      {/* Calculation Method Selection */}
       <View style={styles.methodSection}>
         <Text style={styles.sectionTitle}>Calculation Method</Text>
         <View style={styles.methodButtons}>
@@ -164,7 +305,7 @@ const AzanScreen = () => {
           </View>
           <Switch
             value={azanEnabled}
-            onValueChange={setAzanEnabled}
+            onValueChange={onAzanEnabledChange}
             trackColor={{
               false: theme.colors.textSecondary,
               true: theme.colors.primary,
@@ -181,7 +322,7 @@ const AzanScreen = () => {
           </View>
           <Switch
             value={silentMode}
-            onValueChange={setSilentMode}
+            onValueChange={onSilentModeChange}
             disabled={!azanEnabled}
             trackColor={{
               false: theme.colors.textSecondary,
@@ -193,32 +334,44 @@ const AzanScreen = () => {
 
       <View style={styles.prayerTimesSection}>
         <Text style={styles.sectionTitle}>Today's Prayer Times</Text>
-        {prayerTimes.map((prayer, index) => (
-          <View
-            key={index}
-            style={[
-              styles.prayerCard,
-              prayer.isNext && styles.prayerCardNext,
-            ]}>
-            <Text style={styles.prayerIcon}>{prayer.icon}</Text>
-            <View style={styles.prayerInfo}>
-              <View style={styles.prayerHeader}>
-                <Text style={styles.prayerName}>{prayer.name}</Text>
-                {prayer.isNext && (
-                  <View style={styles.nextBadge}>
-                    <Text style={styles.nextBadgeText}>NEXT</Text>
-                  </View>
-                )}
+        {timesLoading ? (
+          <ActivityIndicator
+            size="large"
+            color={theme.colors.primary}
+            style={{marginVertical: theme.spacing.lg}}
+          />
+        ) : (
+          prayerTimes.map((prayer, index) => (
+            <View
+              key={index}
+              style={[
+                styles.prayerCard,
+                prayer.isNext && styles.prayerCardNext,
+              ]}>
+              <Text style={styles.prayerIcon}>{prayer.icon}</Text>
+              <View style={styles.prayerInfo}>
+                <View style={styles.prayerHeader}>
+                  <Text style={styles.prayerName}>{prayer.name}</Text>
+                  {prayer.isNext && (
+                    <View style={styles.nextBadge}>
+                      <Text style={styles.nextBadgeText}>NEXT</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.prayerTime}>{prayer.time}</Text>
               </View>
-              <Text style={styles.prayerTime}>{prayer.time}</Text>
+              {azanEnabled && (
+                <View style={styles.statusBadge}>
+                  <Icon
+                    name="notifications-active"
+                    size={20}
+                    color={theme.colors.success}
+                  />
+                </View>
+              )}
             </View>
-            {azanEnabled && (
-              <View style={styles.statusBadge}>
-                <Icon name="notifications-active" size={20} color={theme.colors.success} />
-              </View>
-            )}
-          </View>
-        ))}
+          ))
+        )}
       </View>
     </ScrollView>
   );

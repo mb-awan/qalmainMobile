@@ -18,9 +18,11 @@ import { theme } from '../theme/colors';
 import {
   fetchSurah,
   fetchJuz,
+  fetchGlobalAyahNumber,
   SurahContent,
   TranslationLang,
 } from '../services/quranApi';
+import { bookmarkAPI } from '../services/api';
 
 // AlQuran.cloud CDN — same ecosystem as api.alquran.cloud, completely free
 // Format: https://cdn.islamic.network/quran/audio/128/{reciter}/{globalAyahNumber}.mp3
@@ -80,6 +82,8 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   // Playback refs
   const listRef = useRef<FlatList>(null);
+  /** When using server bookmarks: global ayah number → Mongo bookmark id */
+  const serverBookmarkIdsRef = useRef<Map<number, string>>(new Map());
   const soundRef = useRef<Sound | null>(null);
   const ayahsRef = useRef<DisplayAyah[]>([]);
   // Allows recursive auto-advance without stale closures
@@ -329,25 +333,93 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
 
   // ─── Bookmarks ────────────────────────────────────────────────────────────────
 
-  const toggleBookmark = useCallback(async (globalNumber: number) => {
-    setBookmarkedAyahs(prev => {
-      const next = new Set(prev);
-      if (next.has(globalNumber)) {
-        next.delete(globalNumber);
-      } else {
-        next.add(globalNumber);
+  const toggleBookmark = useCallback(
+    async (item: DisplayAyah, wasBookmarked: boolean) => {
+      if (item.isSurahHeader || !item.globalNumber) return;
+      const g = item.globalNumber;
+      const surah = surahNumber ?? item.surahNumber;
+      const ayahInSurah = item.numberInSurah;
+      if (!surah || !ayahInSurah) return;
+
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        try {
+          if (wasBookmarked) {
+            const sid = serverBookmarkIdsRef.current.get(g);
+            if (sid) {
+              await bookmarkAPI.remove(sid);
+            }
+            serverBookmarkIdsRef.current.delete(g);
+          } else {
+            const { data } = await bookmarkAPI.add({
+              surah,
+              ayah: ayahInSurah,
+            });
+            const id = data?.data?.bookmark?.id as string | undefined;
+            if (id) {
+              serverBookmarkIdsRef.current.set(g, id);
+            }
+          }
+          setBookmarkedAyahs(prev => {
+            const next = new Set(prev);
+            if (wasBookmarked) {
+              next.delete(g);
+            } else {
+              next.add(g);
+            }
+            return next;
+          });
+        } catch {
+          /* keep UI unchanged */
+        }
+        return;
       }
-      AsyncStorage.setItem(
-        BOOKMARKS_KEY,
-        JSON.stringify(Array.from(next)),
-      ).catch(() => {});
-      return next;
-    });
-  }, []);
+
+      setBookmarkedAyahs(prev => {
+        const next = new Set(prev);
+        if (wasBookmarked) {
+          next.delete(g);
+        } else {
+          next.add(g);
+        }
+        AsyncStorage.setItem(
+          BOOKMARKS_KEY,
+          JSON.stringify(Array.from(next)),
+        ).catch(() => {});
+        return next;
+      });
+    },
+    [surahNumber],
+  );
 
   // ─── Load content ─────────────────────────────────────────────────────────────
 
   const loadBookmarks = async () => {
+    const token = await AsyncStorage.getItem('authToken');
+    if (token) {
+      try {
+        const { data } = await bookmarkAPI.getAll();
+        const list = data?.data?.bookmarks ?? [];
+        const globalSet = new Set<number>();
+        const idMap = new Map<number, string>();
+        for (const b of list as {
+          id: string;
+          surah: number;
+          ayah: number;
+        }[]) {
+          const gNum = await fetchGlobalAyahNumber(b.surah, b.ayah);
+          globalSet.add(gNum);
+          idMap.set(gNum, b.id);
+        }
+        serverBookmarkIdsRef.current = idMap;
+        setBookmarkedAyahs(globalSet);
+        return;
+      } catch {
+        serverBookmarkIdsRef.current = new Map();
+      }
+    } else {
+      serverBookmarkIdsRef.current = new Map();
+    }
     try {
       const stored = await AsyncStorage.getItem(BOOKMARKS_KEY);
       if (stored) {
@@ -480,7 +552,7 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
                 isBookmarked && !isCurrentlyPlaying && styles.verseNumBadgeBookmarked,
                 isCurrentlyPlaying && styles.verseNumBadgePlaying,
               ]}
-              onPress={() => toggleBookmark(item.globalNumber)}
+              onPress={() => toggleBookmark(item, isBookmarked)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}>
               {isCurrentlyPlaying ? (
                 <Icon name="volume-up" size={15} color={theme.colors.white} />

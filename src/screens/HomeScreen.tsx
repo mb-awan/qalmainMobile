@@ -83,9 +83,10 @@ const HomeScreen = ({ navigation }: any) => {
   ];
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Header with Greeting */}
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.container}>
+        {/* Header with Greeting */}
+        <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.greeting}>Assalamu Alaikum</Text>
           <Text style={styles.userName}>{userName}</Text>
@@ -104,8 +105,8 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
       </View>
 
-      {/* Next Prayer Widget */}
-      <View style={styles.prayerWidget}>
+        {/* Next Prayer Widget */}
+        <View style={styles.prayerWidget}>
         <View style={styles.prayerWidgetContent}>
           <View style={styles.prayerWidgetLeft}>
             <Text style={styles.prayerLabel}>
@@ -123,8 +124,8 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
       </View>
 
-      {/* Learning Hub */}
-      <View style={styles.section}>
+        {/* Learning Hub */}
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Learning Hub</Text>
         <View style={styles.learningHubGrid}>
           {learningHubItems.map(item => (
@@ -142,8 +143,8 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
       </View>
 
-      {/* Daily Tools */}
-      <View style={styles.section}>
+        {/* Daily Tools */}
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Daily Tools</Text>
         <View style={styles.dailyToolsRow}>
           {dailyTools.map(tool => (
@@ -160,8 +161,8 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
       </View>
 
-      {/* Last Read */}
-      <View style={styles.section}>
+        {/* Last Read */}
+        <View style={styles.section}>
         <TouchableOpacity
           style={styles.lastReadCard}
           onPress={() => navigation.navigate('Quran')}>
@@ -174,12 +175,24 @@ const HomeScreen = ({ navigation }: any) => {
           </View>
           <Icon name="arrow-forward-ios" size={18} color={theme.colors.primary} />
         </TouchableOpacity>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+
+      <TouchableOpacity
+        style={styles.tutorFab}
+        onPress={() => navigation.navigate('DigitalQariIntro')}
+        activeOpacity={0.9}>
+        <Icon name="school" size={20} color={theme.colors.white} />
+      </TouchableOpacity>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: theme.colors.backgroundLight,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.backgroundLight,
@@ -401,6 +414,22 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.heading,
     color: theme.colors.textPrimary,
     fontWeight: '600',
+  },
+  tutorFab: {
+    position: 'absolute',
+    right: theme.spacing.lg,
+    bottom: theme.spacing.xl,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
 });
 

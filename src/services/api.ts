@@ -117,13 +117,21 @@ export const bookmarkAPI = {
 };
 
 export const azanAPI = {
-  getPrayerTimes: (lat: number, lng: number, date?: string) =>
-    api.get('/azan/times', {params: {lat, lng, date}}),
+  getPrayerTimes: (
+    lat: number,
+    lng: number,
+    date?: string,
+    madhhab?: 'hanafi' | 'shafi',
+  ) =>
+    api.get('/azan/times', {
+      params: {lat, lng, date, madhhab},
+    }),
   getSettings: () => api.get('/azan/settings'),
   updateSettings: (settings: {
     enabled?: boolean;
     silentMode?: boolean;
     notifications?: boolean;
+    madhhab?: 'hanafi' | 'shafi';
   }) => api.post('/azan/settings', settings),
 };
 
