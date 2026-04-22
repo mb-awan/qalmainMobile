@@ -706,6 +706,31 @@ const QuranReaderScreen = ({ navigation, route }: QuranReaderScreenProps) => {
         />
       )}
 
+      {/* ── AI Qari floating button (visible while reading) ── */}
+      {!loading && !error && (
+        <TouchableOpacity
+          style={styles.aiFab}
+          onPress={() =>
+            navigation.navigate('AIQariSession', {
+              surahNumber,
+              juzNumber,
+              title: screenTitle,
+              contentType: juzNumber
+                ? screenTitle.startsWith('Para')
+                  ? 'para'
+                  : 'juz'
+                : 'surah',
+              fromReader: true,
+            })
+          }
+          activeOpacity={0.9}>
+          <Icon name="record-voice-over" size={20} color={theme.colors.white} />
+          <View style={styles.aiFabBadge}>
+            <Text style={styles.aiFabBadgeText}>AI</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* ── Bottom toolbar ── */}
       {!loading && !error && (
         <View style={styles.toolbar}>
@@ -1127,6 +1152,46 @@ const styles = StyleSheet.create({
   },
   toolbarLabelActive: {
     color: theme.colors.white,
+  },
+
+  // AI Qari floating button (while reading)
+  aiFab: {
+    position: 'absolute',
+    right: theme.spacing.lg,
+    bottom: 116, // clearly above the 90-100px toolbar
+    zIndex: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: theme.colors.white,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  aiFabBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: theme.colors.accentGold,
+    borderRadius: 7,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderWidth: 1.5,
+    borderColor: theme.colors.white,
+    zIndex: 21,
+  },
+  aiFabBadgeText: {
+    fontSize: 7,
+    fontFamily: theme.fonts.button,
+    color: theme.colors.primary,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
 
   // AI Qari mic button

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,6 +15,8 @@ import { userAPI } from '../services/api';
 const HomeScreen = ({ navigation }: any) => {
   const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; timeRemaining: string } | null>(null);
   const [userName, setUserName] = useState('Learner');
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadNextPrayer();
@@ -22,6 +25,27 @@ const HomeScreen = ({ navigation }: any) => {
     }, 60000); // Update every minute
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Show tooltip briefly on mount, then every 12 seconds
+  useEffect(() => {
+    const showFabTooltip = () => {
+      setShowTooltip(true);
+      Animated.sequence([
+        Animated.timing(tooltipOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.delay(2500),
+        Animated.timing(tooltipOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start(() => setShowTooltip(false));
+    };
+
+    const initialTimer = setTimeout(showFabTooltip, 1200);
+    const repeatInterval = setInterval(showFabTooltip, 12000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(repeatInterval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadUserProfile = useCallback(async () => {
@@ -118,7 +142,7 @@ const HomeScreen = ({ navigation }: any) => {
           </View>
           <TouchableOpacity
             style={styles.prayerIconContainer}
-            onPress={() => navigation.navigate('Azan')}>
+            onPress={() => navigation.getParent()?.navigate('Azan')}>
             <Icon name="schedule" size={32} color={theme.colors.accentGold} />
           </TouchableOpacity>
         </View>
@@ -151,7 +175,7 @@ const HomeScreen = ({ navigation }: any) => {
             <TouchableOpacity
               key={tool.id}
               style={styles.dailyToolCard}
-              onPress={() => navigation.navigate(tool.screen)}>
+              onPress={() => navigation.getParent()?.navigate(tool.screen)}>
               <View style={styles.dailyToolIcon}>
                 <Icon name={tool.icon} size={28} color={theme.colors.textPrimary} />
               </View>
@@ -165,7 +189,7 @@ const HomeScreen = ({ navigation }: any) => {
         <View style={styles.section}>
         <TouchableOpacity
           style={styles.lastReadCard}
-          onPress={() => navigation.navigate('Quran')}>
+          onPress={() => navigation.getParent()?.navigate('Quran')}>
           <View style={styles.lastReadIcon}>
             <Icon name="history" size={24} color={theme.colors.textPrimary} />
           </View>
@@ -178,11 +202,20 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
       </ScrollView>
 
+      {/* AI Qari Mode FAB */}
+      {showTooltip && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.fabTooltip, { opacity: tooltipOpacity }]}>
+          <Text style={styles.fabTooltipText}>AI Qari Mode</Text>
+          <View style={styles.fabTooltipArrow} />
+        </Animated.View>
+      )}
       <TouchableOpacity
         style={styles.tutorFab}
-        onPress={() => navigation.navigate('DigitalQariIntro')}
+        onPress={() => navigation.getParent()?.navigate('AIQariDashboard')}
         activeOpacity={0.9}>
-        <Icon name="school" size={20} color={theme.colors.white} />
+        <Icon name="record-voice-over" size={20} color={theme.colors.white} />
       </TouchableOpacity>
     </View>
   );
@@ -419,17 +452,50 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: theme.spacing.lg,
     bottom: theme.spacing.xl,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 7,
+  },
+  fabTooltip: {
+    position: 'absolute',
+    right: theme.spacing.lg + 4,
+    bottom: theme.spacing.xl + 60,
+    backgroundColor: theme.colors.textPrimary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  fabTooltipText: {
+    fontSize: 12,
+    fontFamily: theme.fonts.body,
+    color: theme.colors.white,
+    fontWeight: '600',
+  },
+  fabTooltipArrow: {
+    position: 'absolute',
+    bottom: -6,
+    right: 18,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: theme.colors.textPrimary,
   },
 });
 

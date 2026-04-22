@@ -7,15 +7,16 @@ import { resetToSignIn } from '../navigation/navigationRef';
 // For physical device on same WiFi, set API_HOST to your computer's IP (e.g. '192.168.1.100').
 const API_BASE_URL = __DEV__
   ? (() => {
+      const runtimeHost = (globalThis as {__API_HOST__?: string}).__API_HOST__;
       const host =
-        typeof global.__API_HOST__ !== 'undefined'
-          ? global.__API_HOST__
+        typeof runtimeHost !== 'undefined'
+          ? runtimeHost
           : Platform.OS === 'android'
             ? '10.0.2.2'
             : 'localhost';
       return `http://${host}:3000/api`;
     })()
-  : 'https://your-production-api.com/api';
+  : 'http://localhost:3000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
